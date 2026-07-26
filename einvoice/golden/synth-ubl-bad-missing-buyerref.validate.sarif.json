@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cbc:BuyerReference"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-ubl-bad-missing-buyerref.xml"
+                }
+              }
             }
           ],
           "message": {
@@ -32,7 +37,12 @@
                   "kind": "member",
                   "name": "cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-ubl-bad-missing-buyerref.xml"
+                }
+              }
             }
           ],
           "message": {
@@ -52,7 +62,12 @@
                   "kind": "member",
                   "name": "cac:Delivery/cbc:ActualDeliveryDate"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-ubl-bad-missing-buyerref.xml"
+                }
+              }
             }
           ],
           "message": {

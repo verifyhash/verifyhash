@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cac:TaxTotal/cbc:TaxAmount"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-ubl-bad-vat-mismatch.xml"
+                }
+              }
             }
           ],
           "message": {

@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cbc:InvoiceTypeCode"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "fixtures/synth-ubl-bad-selfbilled_ubl.xml"
+                }
+              }
             }
           ],
           "message": {

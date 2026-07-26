@@ -41,10 +41,13 @@ guard — zero production-code changes):
   einvoice.report --format      finding "location.path" carries    same, via
   gitlab                        the path (empty [] for a clean     location.
                                 file — then byte-equal to clean)   path
-  einvoice.report --format      document embeds NO filesystem      byte-equal
-  sarif                         path at all (logicalLocations      to clean-
-                                only — by design)                  named run +
-                                                                   parseable
+  einvoice.report --format      each located result's              json.loads
+  sarif                         physicalLocation.artifactLocation  of ENTIRE
+                                .uri carries the path, URI-shaped  stdout, then
+                                (illegal characters percent-       unquote(uri)
+                                encoded); RE-MEASURED 2026-07-26   == exact
+                                for T-VHLOC.1 — it used to embed   path
+                                no path at all
   einvoice.report --format      single-file mode embeds NO path    byte-equal
   junit (single file)           (testcase name = rule id,          to clean-
                                 classname = profile)               named run +
@@ -80,6 +83,7 @@ import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from urllib.parse import unquote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -304,18 +308,40 @@ class LegBMachineFormats(unittest.TestCase):
                 base_proc, _ = self.base[(kind, "gitlab")]
                 self.assertEqual(proc.stdout, base_proc.stdout)
 
-    def test_sarif_entire_stdout_parses_and_is_path_independent(self):
-        # Measured: the sarif document embeds NO filesystem path at all
-        # (logicalLocations only) — so the strongest true pin is byte
-        # identity with the clean-named run, plus whole-stdout parseability.
+    def test_sarif_entire_stdout_parses_and_uri_roundtrips(self):
+        # RE-MEASURED 2026-07-26 (T-VHLOC.1): sarif now carries the path in
+        # physicalLocation.artifactLocation.uri, so GitHub code scanning can
+        # anchor an inline annotation. The byte-identity pin this leg used to
+        # carry is therefore gone — replaced by the STRONGER round-trip pin
+        # the json/gitlab legs already use: parse the ENTIRE stdout, then
+        # assert every located result's uri percent-decodes back to the exact
+        # awkward path. That is what actually breaks if the umlaut, the space,
+        # the apostrophe or the ampersand is mangled; byte identity could not
+        # see any of them.
         for kind, name, path in self._each():
             proc = run(report_cmd(path, "sarif"))
             doc = json.loads(proc.stdout.decode("utf-8"))  # ENTIRE stdout
             self.assertEqual(doc.get("version"), "2.1.0")
-            base_proc, _ = self.base[(kind, "sarif")]
-            self.assertEqual(proc.stdout, base_proc.stdout,
-                             "sarif %s %r: output not path-independent"
-                             % (kind, name))
+            located = [r for r in doc["runs"][0]["results"] if r.get("locations")]
+            if kind == "invalid":
+                self.assertTrue(located,
+                                "sarif invalid %r: no located results — the "
+                                "uri assertions would be vacuous" % name)
+            for res in located:
+                loc = res["locations"][0]
+                # The logical anchor must survive alongside the physical one.
+                self.assertIn("logicalLocations", loc,
+                              "sarif %s %r: %s" % (kind, name, loc))
+                uri = loc["physicalLocation"]["artifactLocation"]["uri"]
+                self.assertEqual(
+                    unquote(uri), path,
+                    "sarif %s %r: uri did not round-trip to the path"
+                    % (kind, name))
+                # A URI reference is ASCII-only: nothing illegal may survive
+                # literally (this is what catches raw umlauts and spaces).
+                uri.encode("ascii")
+                self.assertNotIn(" ", uri, "sarif %s %r: raw space in uri"
+                                 % (kind, name))
 
     def test_junit_single_file_entire_stdout_parses(self):
         # Measured: single-file junit embeds no path (testcase name = rule

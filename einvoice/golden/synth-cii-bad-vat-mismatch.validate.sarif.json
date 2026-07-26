@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxTotalAmount"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-cii-bad-vat-mismatch.xml"
+                }
+              }
             }
           ],
           "message": {

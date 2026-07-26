@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:TaxExemptionReason"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "fixtures/synth-ubl-bad-export_ubl.xml"
+                }
+              }
             }
           ],
           "message": {

@@ -17,6 +17,24 @@ Asserted (each maps to a task acceptance criterion):
       exit 3.
   (d) --baseline + --format sarif is rejected with a clear error and nonzero
       exit; the existing json/junit outputs are unchanged (still dispatch).
+
+T-VHLOC.1 additions (`SarifPhysicalLocation` below) — the annotation-reaching
+half. GitHub code scanning draws an inline pull-request annotation from
+`physicalLocation.artifactLocation.uri` + `region.startLine`; before T-VHLOC.1
+`build_sarif` emitted `logicalLocations` only, so the upload succeeded and
+nothing appeared on the diff. Pinned here on the SAME multi-violation fixture
+`test_report_location.py` already uses (imported, never re-copied), with the
+expected line COMPUTED from the fixture text via its `_expected_line` helper:
+
+  * BR-CL-04 (invalid currency code, an attributable field-level finding) ->
+    `region.startLine == _expected_line(INVALID_UBL, 'DocumentCurrencyCode')`;
+  * BR-16 (an absence rule — "an Invoice shall have at least one Invoice
+    line") -> a `physicalLocation` with an `artifactLocation` and NO `region`
+    key at all: no invented line 1, no `startLine: 0`;
+  * every located result keeps its `logicalLocations` member alongside the new
+    physical one, and `helpUri` on the descriptors is untouched;
+  * `artifactLocation.uri` is the argv path echoed verbatim (URI-escaped only
+    where a character is illegal in a URI reference) — never absolutized.
 """
 
 import json
@@ -26,6 +44,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from urllib.parse import unquote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -33,6 +52,9 @@ sys.path.insert(0, HERE)
 from einvoice.report import (  # noqa: E402
     build_report, build_sarif, SARIF_RULE_HELP_BASE_URL)
 from einvoice.remediation import load_catalog  # noqa: E402
+# The SAME fixture + line helper the source_line gate owns — imported, never
+# re-copied, so the two files cannot drift apart.
+from test_report_location import INVALID_UBL, _expected_line  # noqa: E402
 
 # Reuse the exact fixture + bad-invoice construction the other fast gates use.
 BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
@@ -292,6 +314,203 @@ class SarifHelpUri(unittest.TestCase):
         by_id = {r["id"]: r for r in _driver(doc)["rules"]}
         self.assertIn(fake, by_id)
         self.assertNotIn("helpUri", by_id[fake])
+
+
+class SarifPhysicalLocation(unittest.TestCase):
+    """T-VHLOC.1: the line the engine already computes reaches the annotation.
+
+    Driven through the REAL CLI on the multi-violation fixture
+    ``test_report_location.INVALID_UBL`` (imported, not re-copied), which fires
+    both classes of finding in ONE run: BR-CL-04 is attributable to a concrete
+    element and carries ``source_line``; BR-16 is an absence rule and carries
+    none. The expected line is COMPUTED from the fixture text by that module's
+    ``_expected_line`` helper, so editing the fixture cannot silently drift the
+    assertion.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix="einvoice-sarifloc-")
+        cls.path = os.path.join(cls.tmp, "loc.xml")
+        with open(cls.path, "w", encoding="utf-8") as fh:
+            fh.write(INVALID_UBL)
+        proc = _run(["--profile", "xrechnung", "--format", "sarif", cls.path])
+        assert proc.returncode == 1, proc.stdout + proc.stderr
+        cls.proc = proc
+        cls.doc = json.loads(proc.stdout)
+        cls.by_rule = {r["ruleId"]: r for r in cls.doc["runs"][0]["results"]}
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def _location(self, rule_id):
+        self.assertIn(rule_id, self.by_rule,
+                      "fixture drift: %s did not fire (%s)"
+                      % (rule_id, sorted(self.by_rule)))
+        res = self.by_rule[rule_id]
+        self.assertIn("locations", res, res)
+        self.assertEqual(len(res["locations"]), 1, res)
+        return res["locations"][0]
+
+    def test_fixture_fires_both_finding_classes(self):
+        # Non-vacuity guard: this class only means something while the fixture
+        # produces an attributed AND a non-attributed finding in one run.
+        self.assertIn("BR-CL-04", self.by_rule, sorted(self.by_rule))
+        self.assertIn("BR-16", self.by_rule, sorted(self.by_rule))
+        self.assertGreaterEqual(len(self.by_rule), 2)
+
+    def test_attributed_finding_has_computed_start_line(self):
+        loc = self._location("BR-CL-04")
+        expected = _expected_line(INVALID_UBL, "DocumentCurrencyCode")
+        self.assertEqual(
+            loc["physicalLocation"]["region"]["startLine"], expected,
+            "BR-CL-04 startLine must be the fixture's real "
+            "DocumentCurrencyCode line: %r" % (loc,))
+
+    def test_absence_finding_has_artifact_but_no_region(self):
+        physical = self._location("BR-16")["physicalLocation"]
+        self.assertIn("artifactLocation", physical, physical)
+        self.assertNotIn(
+            "region", physical,
+            "an absence/document-level finding must carry NO region — no "
+            "invented line 1, no startLine 0: %r" % (physical,))
+
+    def test_every_located_result_has_artifact_uri_and_logical_location(self):
+        results = self.doc["runs"][0]["results"]
+        located = [r for r in results if r.get("locations")]
+        self.assertTrue(located, "no located results at all")
+        for res in located:
+            loc = res["locations"][0]
+            # The logical half must SURVIVE alongside the physical one.
+            self.assertIn("logicalLocations", loc, res)
+            self.assertTrue(loc["logicalLocations"][0]["name"], res)
+            uri = loc["physicalLocation"]["artifactLocation"]["uri"]
+            self.assertTrue(uri, res)
+            # Path echo: the argv string verbatim, never absolutized/resolved
+            # (this fixture path is already URI-safe, so it is literal).
+            self.assertEqual(uri, self.path, res)
+
+    def test_startline_appears_on_exactly_the_source_line_findings(self):
+        # Cross-check against the JSON record, which is the authority for
+        # which findings are attributable.
+        report = build_report(self.path, profile="xrechnung")
+        with_line = {v["rule"] for v in report["violations"]
+                     if v.get("source_line") is not None}
+        self.assertTrue(with_line, "fixture drift: no attributed findings")
+        emitted = set()
+        for res in self.doc["runs"][0]["results"]:
+            for loc in res.get("locations", []):
+                if "startLine" in loc.get("physicalLocation", {}).get(
+                        "region", {}):
+                    emitted.add(res["ruleId"])
+        self.assertEqual(emitted, with_line,
+                         "startLine set != source_line set")
+
+    def test_helpuri_still_present_on_catalog_rules(self):
+        # Criterion: helpUri behaviour is UNCHANGED by the location work.
+        catalog_ids = set(load_catalog().keys())
+        rules = _driver(self.doc)["rules"]
+        self.assertTrue(rules)
+        checked = 0
+        for r in rules:
+            if r["id"] in catalog_ids:
+                self.assertEqual(
+                    r["helpUri"], SARIF_RULE_HELP_BASE_URL + r["id"] + "/", r)
+                checked += 1
+            else:
+                self.assertNotIn("helpUri", r, r)
+        self.assertGreaterEqual(checked, 1, "no catalog rule fired")
+
+    def test_absence_only_run_emits_no_startline_anywhere(self):
+        # A run whose findings are ALL absence-class must contain no
+        # startLine at all — but still every physicalLocation.
+        rel = os.path.join("examples", "01-missing-fields", "broken.xml")
+        proc = _run(["--profile", "xrechnung", "--format", "sarif", rel])
+        self.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
+        self.assertNotIn("startLine", proc.stdout)
+        doc = json.loads(proc.stdout)
+        located = [r for r in doc["runs"][0]["results"] if r.get("locations")]
+        self.assertTrue(located, proc.stdout)
+        for res in located:
+            physical = res["locations"][0]["physicalLocation"]
+            # Relative in -> relative out: the argv string, not an abspath.
+            self.assertEqual(physical["artifactLocation"]["uri"], rel, res)
+            self.assertNotIn("region", physical, res)
+
+    def test_uri_percent_encodes_only_illegal_characters(self):
+        # A directory + filename carrying a space, a literal '%', an
+        # apostrophe, an ampersand and an umlaut. Legal URI characters stay
+        # literal; illegal ones are percent-encoded per UTF-8 byte, and
+        # unquote() returns the argv string byte for byte.
+        awkward = "O'Brien & Söhne 100%.xml"
+        path = os.path.join(self.tmp, awkward)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(INVALID_UBL)
+        proc = _run(["--profile", "xrechnung", "--format", "sarif", path])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        doc = json.loads(proc.stdout)
+        by_rule = {r["ruleId"]: r for r in doc["runs"][0]["results"]}
+        uri = (by_rule["BR-CL-04"]["locations"][0]["physicalLocation"]
+               ["artifactLocation"]["uri"])
+        self.assertIn("%20", uri, uri)          # space -> %20
+        self.assertIn("%25", uri, uri)          # literal % -> %25
+        self.assertIn("%C3%B6", uri, uri)       # ö -> UTF-8 bytes
+        self.assertIn("'", uri, uri)            # sub-delim: stays literal
+        self.assertIn("&", uri, uri)            # sub-delim: stays literal
+        self.assertEqual(unquote(uri), path,
+                         "the uri must percent-decode back to the argv path")
+        # And the line still reaches the annotation through the escaping.
+        self.assertEqual(
+            by_rule["BR-CL-04"]["locations"][0]["physicalLocation"]["region"]
+            ["startLine"],
+            _expected_line(INVALID_UBL, "DocumentCurrencyCode"), uri)
+
+    def test_fingerprint_is_still_line_independent(self):
+        # The physical location must NOT have leaked into the fingerprint:
+        # the same logical finding at two different lines keeps one digest.
+        base = {
+            "source": "invoice.xml",
+            "valid": False,
+            "violations": [{
+                "rule": "BR-01", "severity": "fatal",
+                "field": "/Invoice/cbc:CustomizationID", "location": "BT-24",
+                "message": "m", "title": "t", "fix_hint": "f", "terms": [],
+            }],
+        }
+        def at(line):
+            rep = json.loads(json.dumps(base))
+            rep["violations"][0]["source_line"] = line
+            return build_sarif(rep)["runs"][0]["results"][0]
+        a, b = at(4), at(4000)
+        self.assertEqual(a["partialFingerprints"], b["partialFingerprints"])
+        # ...while the emitted lines really did differ.
+        self.assertEqual(
+            a["locations"][0]["physicalLocation"]["region"]["startLine"], 4)
+        self.assertEqual(
+            b["locations"][0]["physicalLocation"]["region"]["startLine"], 4000)
+
+    def test_bogus_source_line_values_never_become_a_region(self):
+        # Defensive: a 0, a negative, a bool or a non-int must never be
+        # published as a startLine (SARIF requires >= 1) — the finding
+        # degrades to artifact-only, exactly like an absence rule.
+        for bogus in (0, -1, True, False, "8", 8.0, None):
+            rep = {
+                "source": "invoice.xml",
+                "valid": False,
+                "violations": [{
+                    "rule": "BR-01", "severity": "fatal",
+                    "field": "/Invoice/cbc:CustomizationID",
+                    "message": "m", "title": "t", "fix_hint": "f",
+                    "terms": [], "source_line": bogus,
+                }],
+            }
+            physical = (build_sarif(rep)["runs"][0]["results"][0]
+                        ["locations"][0]["physicalLocation"])
+            self.assertIn("artifactLocation", physical, bogus)
+            self.assertNotIn("region", physical,
+                             "source_line=%r must not become a region" % bogus)
 
 
 if __name__ == "__main__":

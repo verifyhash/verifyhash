@@ -23,10 +23,9 @@ once from a different cwd (/tmp and a fresh temp dir) using the absolute path.
     argv — never absolutized, resolved, or rewritten. The path appears in the
     text PASS:/FAIL: verdict line and the json ``source`` field; cli.py's
     ``display_path = path`` (with "-" for stdin) is the whole mechanism.
-  * SARIF contains NO filesystem path at all: findings are anchored by
-    ``logicalLocations`` (element names), never physicalLocation/
-    artifactLocation; the only URIs are static rule/help URLs. The
-    relative-path and absolute-path SARIF documents were BYTE-IDENTICAL.
+  * SARIF contained NO filesystem path at all: findings were anchored by
+    ``logicalLocations`` (element names) only, so the relative-path and
+    absolute-path SARIF documents were BYTE-IDENTICAL.
   * No leakage: with the user-supplied path string removed from the report
     bytes, neither the home directory nor the package's install dir appeared
     anywhere in json or sarif output.
@@ -34,6 +33,41 @@ once from a different cwd (/tmp and a fresh temp dir) using the absolute path.
 ZERO divergence and ZERO leakage were measured, so per the task spec NO
 product source was modified: this file pins the already-true property as a
 regression guard (verify-and-close).
+
+RE-MEASURED 2026-07-26 (T-VHLOC.1) — THE SARIF LEG CHANGED ON PURPOSE
+---------------------------------------------------------------------------
+The "no path at all in sarif" bullet above was a pin of a MEASUREMENT, not a
+product requirement, and it was actively harmful: GitHub code scanning places
+an inline pull-request annotation from
+``physicalLocation.artifactLocation.uri`` + ``region.startLine``, so a SARIF
+document carrying only ``logicalLocations`` uploads fine and appears NOWHERE
+on the diff — the whole point of the bundled Action. T-VHLOC.1 therefore gives
+every located result a ``physicalLocation``, and the sarif leg here is
+REPLACED (not relaxed) by the SAME rule the json leg already carries, plus a
+positive one the old leg could not express:
+
+  * sarif now echoes the argv path in ``artifactLocation.uri``, URI-shaped:
+    forward slashes, and percent-encoding for exactly those characters that
+    are illegal in a URI reference (space -> ``%20``, ``ü`` -> ``%C3%BC``,
+    ``%`` -> ``%25``); ``&``, ``'``, ``()``, ``+``, ``,``, ``;``, ``=``,
+    ``:``, ``@`` stay literal. Percent-decoding the uri reproduces the argv
+    string byte for byte — the path-echo rule still holds and nothing is
+    absolutized, resolved or rewritten.
+  * The relative and absolute SARIF documents are consequently NO LONGER
+    byte-identical — they differ in exactly the echoed path and nothing else,
+    which is precisely what the json leg has always allowed and what
+    ``_normalize`` exists to prove.
+  * The LEAKAGE rule is unchanged and now applies to sarif with the same
+    strength as to json: after removing every occurrence of the supplied path
+    (raw AND URI-escaped) the remainder contains neither the home directory
+    nor the install dir, and a RELATIVE invocation still emits no absolute
+    path anywhere.
+
+Net strength is UP: one negative assertion ("the path is absent") was traded
+for a positive assertion that pins the exact value ("the uri percent-decodes
+to the argv string verbatim, on every located result"), the equal-strength
+leakage rule, and a non-vacuity guard that fails if the invalid fixture stops
+producing located results.
 
 WHAT THIS FILE BINDS
 --------------------
@@ -51,11 +85,16 @@ any cwd — the product itself pins nothing.
   2. json ``source`` must be the argv string VERBATIM (relative stays
      relative, absolute stays absolute) — the path-echo rule itself.
   3. NO internal-absolute-path leakage in json and sarif: after removing
-     every occurrence of the user-supplied path string from the report bytes,
-     the remainder contains neither os.path.expanduser('~') nor the einvoice
-     package's own install dir prefix (both computed here, nothing
-     hardcoded). A relative invocation must additionally contain them
-     nowhere at all, and sarif must contain no path in ANY leg.
+     every occurrence of the user-supplied path string (raw, and — for sarif
+     — URI-escaped) from the report bytes, the remainder contains neither
+     os.path.expanduser('~') nor the einvoice package's own install dir
+     prefix (both computed here, nothing hardcoded). A relative invocation
+     must additionally contain them nowhere at all. For sarif, EVERY result
+     that carries a ``locations`` entry must in addition expose a
+     ``physicalLocation.artifactLocation.uri`` that percent-decodes to the
+     argv string VERBATIM, alongside the ``logicalLocations`` member — with
+     a non-vacuity guard so an emitter that stopped emitting locations at all
+     cannot pass.
   4. cwd itself never changes the output: the same absolute-path invocation
      from two different fresh temp cwds and from this repo dir must be
      byte-identical (stdout, stderr, exit code).
@@ -75,6 +114,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from urllib.parse import quote, unquote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -123,6 +163,19 @@ def _normalize(raw, supplied_path):
     byte-identical.
     """
     return raw.replace(supplied_path.encode("utf-8"), PLACEHOLDER)
+
+
+#: RFC 3986 characters that stay LITERAL in the path part of a URI reference:
+#: unreserved (``quote`` never escapes ``A-Za-z0-9-._~``) plus sub-delims,
+#: ``:``/``@`` and the ``/`` separator. Written out here INDEPENDENTLY of
+#: ``einvoice.report._sarif_artifact_uri`` — an assertion that re-used the
+#: product's own helper would only prove the helper equals itself.
+_URI_PATH_SAFE = "/:@!$&'()*+,;="
+
+
+def _uri_form(path):
+    """The URI reference the argv ``path`` must appear as in sarif."""
+    return quote(path, safe=_URI_PATH_SAFE)
 
 
 class TestPathInvariance(unittest.TestCase):
@@ -217,24 +270,60 @@ class TestPathInvariance(unittest.TestCase):
                         resta, restb,
                         "%s: json fields other than 'source' differ" % ctx)
 
+    def _assert_sarif_uri_is_argv(self, proc, supplied, tag):
+        """sarif: every located result names the argv path and nothing else.
+
+        Parses the ENTIRE stdout and, for each result carrying a ``locations``
+        entry, asserts (i) the ``logicalLocations`` member survived alongside
+        the new physical one, (ii)
+        ``physicalLocation.artifactLocation.uri`` equals the independently
+        computed URI form of the SUPPLIED argv string, and (iii) percent-
+        decoding that uri reproduces the argv string byte for byte — i.e. the
+        path was echoed, never absolutized or resolved. Returns how many
+        located results were checked so the caller can reject a vacuous pass.
+        """
+        doc = json.loads(proc.stdout.decode("utf-8"))
+        located = [r for r in doc["runs"][0]["results"] if r.get("locations")]
+        for res in located:
+            loc = res["locations"][0]
+            self.assertIn("logicalLocations", loc,
+                          "%s %s lost its logicalLocations member: %r"
+                          % (tag, res.get("ruleId"), loc))
+            uri = loc["physicalLocation"]["artifactLocation"]["uri"]
+            self.assertEqual(
+                uri, _uri_form(supplied),
+                "%s %s artifactLocation.uri is not the URI form of the argv "
+                "path" % (tag, res.get("ruleId")))
+            self.assertEqual(
+                unquote(uri), supplied,
+                "%s %s artifactLocation.uri does not percent-decode back to "
+                "the argv string — the path-echo rule broke"
+                % (tag, res.get("ruleId")))
+        return len(located)
+
     def test_no_internal_absolute_path_leakage_json_and_sarif(self):
-        """(b) json + sarif: no home-dir / install-dir leakage.
+        """(b) json + sarif: no home-dir / install-dir leakage; sarif's uri
+        is the argv path verbatim.
 
         For both fixtures, each machine surface (validate --json,
         einvoice.report --format json, einvoice.report --format sarif) is run
         in both legs. After removing every occurrence of the user-supplied
-        path string from the report bytes, the remainder must contain neither
-        os.path.expanduser('~') nor the einvoice package's install dir —
-        both computed in setUpClass, nothing hardcoded. Extra pins per the
-        measured rule: a RELATIVE invocation contains those prefixes nowhere
-        at all (nothing was absolutized), and sarif contains no path in ANY
-        leg (it has no filesystem-path field).
+        path string — raw, and for sarif also its URI-escaped form — from the
+        report bytes, the remainder must contain neither
+        os.path.expanduser('~') nor the einvoice package's install dir — both
+        computed in setUpClass, nothing hardcoded. Extra pins per the measured
+        rule: a RELATIVE invocation contains those prefixes nowhere at all
+        (nothing was absolutized), and sarif's
+        ``physicalLocation.artifactLocation.uri`` is the argv string verbatim
+        on EVERY located result (see :meth:`_assert_sarif_uri_is_argv`), with
+        a non-vacuity guard on the invalid fixture.
         """
         surfaces = [
             ("einvoice", ["validate"], ["--json"], "validate-json"),
             ("einvoice.report", ["--format", "json"], [], "report-json"),
             ("einvoice.report", ["--format", "sarif"], [], "report-sarif"),
         ]
+        sarif_located = 0
         for rel_fixture, _ in FIXTURES:
             for module, pre, post, sname in surfaces:
                 for label, supplied, cwd, tmp in self._legs(rel_fixture):
@@ -249,13 +338,17 @@ class TestPathInvariance(unittest.TestCase):
                         "%s unexpected exit %d (stderr: %r)"
                         % (tag, proc.returncode, proc.stderr[:400]))
                     supplied_b = supplied.encode("utf-8")
-                    if sname == "report-sarif":
-                        # Measured rule: sarif embeds NO filesystem path.
-                        self.assertNotIn(
-                            supplied_b, proc.stdout,
-                            "%s sarif embeds the input path — the "
-                            "documented 'no path in sarif' rule broke" % tag)
                     remainder = proc.stdout.replace(supplied_b, b"")
+                    if sname == "report-sarif":
+                        # T-VHLOC.1: sarif now DOES echo the path, URI-shaped
+                        # — pin its exact value, then strip that form too so
+                        # the leakage rule below stays exactly as strict as
+                        # the json one.
+                        n = self._assert_sarif_uri_is_argv(proc, supplied, tag)
+                        if rel_fixture == INVALID_FIXTURE:
+                            sarif_located += n
+                        remainder = remainder.replace(
+                            _uri_form(supplied).encode("utf-8"), b"")
                     for name, prefix in (("home dir", self.home),
                                          ("package install dir",
                                           self.pkg_dir)):
@@ -270,6 +363,14 @@ class TestPathInvariance(unittest.TestCase):
                                 prefix, proc.stdout,
                                 "%s absolutized a relative input (%s "
                                 "appeared)" % (tag, name))
+        # Non-vacuity: the invalid fixture must really have produced located
+        # sarif results in BOTH legs, or the uri assertions above proved
+        # nothing at all.
+        self.assertGreaterEqual(
+            sarif_located, 2,
+            "the invalid fixture produced %d located sarif results across "
+            "both legs — the artifactLocation assertions were vacuous"
+            % sarif_located)
 
     def test_temp_cwd_never_changes_output(self):
         """(c) the SAME absolute-path invocation is cwd-proof, byte-for-byte.

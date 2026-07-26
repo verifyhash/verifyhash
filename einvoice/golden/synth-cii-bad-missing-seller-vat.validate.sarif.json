@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cac:AccountingSupplierParty/cac:Party/cac:PartyIdentification/cbc:ID"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-cii-bad-missing-seller-vat.xml"
+                }
+              }
             }
           ],
           "message": {
@@ -32,7 +37,12 @@
                   "kind": "member",
                   "name": "cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-cii-bad-missing-seller-vat.xml"
+                }
+              }
             }
           ],
           "message": {
@@ -52,7 +62,12 @@
                   "kind": "member",
                   "name": "cac:AllowanceCharge/cac:TaxCategory/cbc:ID"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-cii-bad-missing-seller-vat.xml"
+                }
+              }
             }
           ],
           "message": {
@@ -72,7 +87,12 @@
                   "kind": "member",
                   "name": "cac:AllowanceCharge/cac:TaxCategory/cbc:ID"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-cii-bad-missing-seller-vat.xml"
+                }
+              }
             }
           ],
           "message": {

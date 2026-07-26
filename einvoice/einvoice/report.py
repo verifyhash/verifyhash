@@ -1305,6 +1305,67 @@ def _sarif_fingerprint(rule_id, loc_name):
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+#: Characters that may appear LITERALLY in the path part of a URI reference
+#: (RFC 3986 ``path-noscheme`` / ``path-absolute``): ``unreserved`` (ALPHA,
+#: DIGIT, ``-``, ``.``, ``_``, ``~``), ``sub-delims`` (``!$&'()*+,;=``), plus
+#: ``:`` and ``@`` — both are ``pchar`` — and ``/``, the segment separator.
+#: EVERY other byte is illegal there and MUST be percent-encoded: the space,
+#: ``"``, ``<``, ``>``, ``\``, ``^``, ``` ` ```, ``{``, ``|``, ``}``, ``[``,
+#: ``]``, the delimiters ``#`` and ``?`` (they would start a fragment/query),
+#: ``%`` itself (so an existing escape is not re-read as one), C0 controls and
+#: every non-ASCII byte.
+_URI_PATH_SAFE = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz"
+    "0123456789"
+    "-._~"          # unreserved
+    "!$&'()*+,;="   # sub-delims
+    ":@"            # the remaining pchar members
+    "/"             # segment separator
+)
+
+
+def _sarif_artifact_uri(source):
+    """Turn the caller's argv path into a SARIF ``artifactLocation.uri``.
+
+    The PATH-ECHO RULE (measured, pinned by ``test_path_invariance.py`` and
+    documented in REPORT-FORMATS.md "Path echo") says every surface repeats the
+    path EXACTLY as it arrived on argv — nothing is absolutized, resolved or
+    rewritten — so this helper deliberately calls no ``abspath``/``realpath``/
+    ``relpath``. ``report["source"]`` already carries that argv string; the only
+    two transformations applied are the ones a *URI* demands:
+
+      1. separator shape — on a platform whose ``os.sep`` is not ``/``
+         (Windows) the separators become ``/``, because a SARIF ``uri`` is a
+         URI reference, not a native path. On POSIX ``os.sep`` IS ``/``, so a
+         literal backslash in a filename is just another character and is
+         percent-encoded (``%5C``) rather than turned into a separator;
+      2. percent-encoding — every character outside :data:`_URI_PATH_SAFE` is
+         replaced by ``%XX`` per UTF-8 byte. ``invoices/Q1 2026.xml`` becomes
+         ``invoices/Q1%202026.xml``; ``Rechnung_Müller.xml`` becomes
+         ``Rechnung_M%C3%BCller.xml``. Characters that are legal in a URI
+         reference — ``&``, ``'``, ``(``, ``)``, ``+``, ``,``, ``;``, ``=``,
+         ``:``, ``@`` — are left ALONE, so the common case stays readable.
+
+    Percent-decoding the result reproduces the argv string byte for byte, which
+    is what ``test_path_invariance.py`` / ``test_filename_robustness.py`` pin.
+
+    :param source: the report ``source`` field (the argv path string).
+    :returns: a URI reference (``str``); ``""`` when ``source`` is empty.
+    """
+    if not source:
+        return ""
+    if os.sep != "/":
+        source = source.replace(os.sep, "/")
+    out = []
+    for ch in source:
+        if ch in _URI_PATH_SAFE:
+            out.append(ch)
+        else:
+            out.extend("%%%02X" % byte for byte in ch.encode("utf-8"))
+    return "".join(out)
+
+
 def build_sarif(report):
     """Project a report dict (from :func:`build_report`) into a SARIF 2.1.0 dict.
 
@@ -1333,7 +1394,34 @@ def build_sarif(report):
         ``ruleId`` = the rule id, ``level`` per :func:`_sarif_level`,
         ``message.text`` = the violation message (falling back to the catalog
         title), and — when a field/location is present — a ``locations`` entry
-        carrying a ``logicalLocations`` member.
+        carrying BOTH a ``logicalLocations`` member (the offending element
+        name) and a ``physicalLocation`` (see below).
+
+    PHYSICAL LOCATION — why it exists. GitHub code scanning draws an inline
+    pull-request annotation from ``physicalLocation.artifactLocation.uri`` plus
+    ``region.startLine``; a result that carries only ``logicalLocations``
+    uploads successfully and shows up NOWHERE on the diff. So each location
+    object also gets:
+
+      * ``physicalLocation.artifactLocation.uri`` = the validated invoice path
+        as the caller spelled it on argv (``report["source"]``), passed through
+        :func:`_sarif_artifact_uri` — forward slashes, percent-encoded where a
+        character is illegal in a URI reference, never absolutized (the
+        path-echo rule). Omitted only when the report carries no ``source`` at
+        all, which no :func:`build_report` output ever does — there is then no
+        artifact to name, and the ``logicalLocations`` member stands alone;
+      * ``physicalLocation.region.startLine`` = the 1-based ``source_line``
+        the violation record carries when the finding is attributable to a
+        concrete element. An absence/document-level finding (BR-16, "an Invoice
+        shall have at least one Invoice line") has no attributable line, so it
+        gets the ``artifactLocation`` and NO ``region`` — never a guessed line
+        1, never a ``startLine`` of 0. This mirrors :func:`build_github`
+        omitting ``line=`` and :func:`build_gitlab` omitting ``location.lines``.
+
+    ``partialFingerprints`` stays line-INDEPENDENT (:func:`_sarif_fingerprint`
+    hashes rule id + logical location only), so an edit that shifts a violation
+    to a different line still de-duplicates against the previous run even
+    though its ``startLine`` moved.
 
     A not-well-formed input (``report`` has an ``error``) yields a single result
     whose ``ruleId`` is the error code, ``level`` ``error`` and ``message.text``
@@ -1355,6 +1443,11 @@ def build_sarif(report):
     # document is still produced in full and stays valid. A packaging slip must
     # never turn the Action's DEFAULT ``format: sarif`` into a traceback.
     catalog_ids = _remediation_catalog()
+
+    # The argv path, URI-shaped once for every result (see
+    # :func:`_sarif_artifact_uri`). Empty only for a hand-built report dict
+    # with no ``source`` — build_report always sets one.
+    artifact_uri = _sarif_artifact_uri(report.get("source") or "")
 
     if report.get("error"):
         # Not-well-formed XML: a single error result, no rule metadata — the
@@ -1415,16 +1508,32 @@ def build_sarif(report):
                         rule_id, loc_name),
                 },
             }
-            # Attach a logical location when we know WHERE the finding is;
-            # omit ``locations`` entirely when neither field nor location hint
-            # is present (an empty locations array is not useful).
+            # Attach a location when we know WHERE the finding is; omit
+            # ``locations`` entirely when neither field nor location hint is
+            # present (an empty locations array is not useful).
             if loc_name:
-                result["locations"] = [{
+                loc = {
                     "logicalLocations": [{
                         "name": loc_name,
                         "kind": "member",
                     }],
-                }]
+                }
+                # The PHYSICAL half — what GitHub turns into an inline PR
+                # annotation. The artifact is the invoice the caller named;
+                # the region is emitted ONLY for a finding the parser could
+                # attribute to a concrete 1-based source line (never a guessed
+                # line 1, never 0). ``source_line`` is validated here rather
+                # than trusted: a bool is not a line number, and SARIF
+                # ``region.startLine`` must be >= 1.
+                if artifact_uri:
+                    physical = {"artifactLocation": {"uri": artifact_uri}}
+                    source_line = v.get("source_line")
+                    if (isinstance(source_line, int)
+                            and not isinstance(source_line, bool)
+                            and source_line >= 1):
+                        physical["region"] = {"startLine": source_line}
+                    loc["physicalLocation"] = physical
+                result["locations"] = [loc]
             results.append(result)
 
     return {

@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "fixtures/synth-ubl-bad-fullshape_ubl.xml"
+                }
+              }
             }
           ],
           "message": {

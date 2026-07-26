@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cac:LegalMonetaryTotal/cbc:LineExtensionAmount"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-ubl-bad-large-mixed.xml"
+                }
+              }
             }
           ],
           "message": {
@@ -32,7 +37,12 @@
                   "kind": "member",
                   "name": "cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-ubl-bad-large-mixed.xml"
+                }
+              }
             }
           ],
           "message": {

@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/pdf/facturx-bad.pdf"
+                }
+              }
             }
           ],
           "message": {
@@ -32,7 +37,12 @@
                   "kind": "member",
                   "name": "ram:SellerTradeParty/ram:DefinedTradeContact"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/pdf/facturx-bad.pdf"
+                }
+              }
             }
           ],
           "message": {
@@ -52,7 +62,12 @@
                   "kind": "member",
                   "name": "ram:SellerTradeParty/ram:PostalTradeAddress/ram:CityName"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/pdf/facturx-bad.pdf"
+                }
+              }
             }
           ],
           "message": {
@@ -72,7 +87,12 @@
                   "kind": "member",
                   "name": "ram:SellerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/pdf/facturx-bad.pdf"
+                }
+              }
             }
           ],
           "message": {
@@ -92,7 +112,12 @@
                   "kind": "member",
                   "name": "ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CityName"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/pdf/facturx-bad.pdf"
+                }
+              }
             }
           ],
           "message": {
@@ -112,7 +137,12 @@
                   "kind": "member",
                   "name": "ram:BuyerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/pdf/facturx-bad.pdf"
+                }
+              }
             }
           ],
           "message": {
@@ -132,7 +162,12 @@
                   "kind": "member",
                   "name": "ram:ApplicableHeaderTradeAgreement/ram:BuyerReference"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/pdf/facturx-bad.pdf"
+                }
+              }
             }
           ],
           "message": {
@@ -152,7 +187,12 @@
                   "kind": "member",
                   "name": "ram:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/pdf/facturx-bad.pdf"
+                }
+              }
             }
           ],
           "message": {
@@ -172,7 +212,12 @@
                   "kind": "member",
                   "name": "ram:ApplicableHeaderTradeDelivery/ram:ActualDeliverySupplyChainEvent/ram:OccurrenceDateTime"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/pdf/facturx-bad.pdf"
+                }
+              }
             }
           ],
           "message": {

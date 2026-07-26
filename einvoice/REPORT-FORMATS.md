@@ -66,17 +66,34 @@ Where the echoed path appears, per surface:
   verdict line carries the path verbatim.
 - **json** (`validate --json`, `--format json`) — the `source` field is the
   argv string verbatim.
-- **sarif** — contains **no filesystem path at all**: findings are anchored by
-  `logicalLocations` (offending element names), never
-  `physicalLocation`/`artifactLocation`, and the only URIs are the static
-  rule/help URLs. Relative-path and absolute-path invocations of the same file
-  produce byte-identical SARIF.
+- **sarif** — every result that has a location carries **both** halves: a
+  `logicalLocations` member (the offending element name) and a
+  `physicalLocation` whose `artifactLocation.uri` is the argv path,
+  **URI-shaped**. URI-shaped means two things and nothing more: separators
+  become `/` on platforms whose native separator is not `/`, and characters
+  that are illegal in a URI reference are percent-encoded — a space becomes
+  `%20`, `ü` becomes `%C3%BC`, a literal `%` becomes `%25`. Characters that
+  are legal stay literal, so `&`, `'`, `(`, `)`, `+`, `,`, `;`, `=`, `:` and
+  `@` are readable as typed. Percent-decoding the `uri` returns the argv
+  string byte for byte; nothing is absolutized or resolved. A finding the
+  parser could attribute to a concrete element additionally gets
+  `physicalLocation.region.startLine` — the 1-based source line — while an
+  absence/document-level finding (say BR-16, "an Invoice shall have at least
+  one Invoice line") gets the `artifactLocation` and **no** `region` at all,
+  never a guessed line 1 and never `startLine: 0`. This is what GitHub code
+  scanning needs to draw an inline pull-request annotation: without
+  `artifactLocation.uri` + `region.startLine` the SARIF upload succeeds and
+  nothing appears on the diff. Consequence: relative-path and absolute-path
+  invocations of the same file are **no longer byte-identical** — they differ
+  in exactly the echoed path, like `json`. `partialFingerprints` stays
+  line-independent (rule id + logical location only), so an edit that shifts a
+  finding to a new line still de-duplicates against the previous run.
 - **html** — shows only the input file's **basename** in its `source:` meta
   line (the one place a path could appear), never the directory part: the
   archived/shared HTML artifact embeds no home directory, username, or
-  machine path, and — like sarif — relative-path and absolute-path
-  invocations of the same file produce byte-identical HTML (no embedded
-  timestamp either; pinned by `test_report_html.py`).
+  machine path, and — unlike sarif, which now echoes the path — relative-path
+  and absolute-path invocations of the same file still produce byte-identical
+  HTML (no embedded timestamp either; pinned by `test_report_html.py`).
 
 Two consequences worth relying on:
 
@@ -87,13 +104,19 @@ Two consequences worth relying on:
    relative-from-parent vs absolute-from-a-temp-cwd produced identical
    verdicts (exit 0 / exit 1) and, after normalizing the echoed path,
    identical bytes.
-2. **No machine-internal paths leak.** Because the tool never absolutizes,
-   a relative invocation emits no absolute path anywhere in json or sarif —
-   reports are safe to commit or upload without exposing home directories or
-   install locations. (Honest limit: if *you* pass an absolute path, that
-   string is echoed back verbatim in **text** and **json**, including whatever
-   it reveals — choose the spelling you are comfortable publishing. **sarif**
-   and **html** never carry it: sarif embeds no path, html only the basename.)
+2. **No machine-internal paths leak — you choose the spelling.** Because the
+   tool never absolutizes, a relative invocation emits no absolute path
+   anywhere in json or sarif: run `einvoice validate --format sarif
+   invoices/march.xml` from your repo root and the `uri` is
+   `invoices/march.xml`, which is exactly the repo-relative form GitHub code
+   scanning needs to anchor an annotation — no home directory, no username,
+   no install location, and no CI-runner workspace prefix. (Honest limit: if
+   *you* pass an absolute path, that string is echoed back verbatim in
+   **text**, **json** and now **sarif** too — including whatever it reveals —
+   so pass the spelling you are comfortable publishing, and note that an
+   absolute `uri` is also one GitHub cannot match to a file in the diff.
+   **html** is the one surface that still never carries it: only the
+   basename.)
 
 ## OS-level input errors
 
@@ -175,8 +198,10 @@ How the error appears, per golden-pinned machine format:
 - **sarif** — one `result` with `ruleId` `"unsupported-container"`, `level`
   `"error"`, `message.text` = the extractor reason, an **empty**
   `tool.driver.rules` array (no rule fired), a stable `partialFingerprints`
-  digest keyed on the error code alone, and — per the path-echo section
-  above — no filesystem path anywhere.
+  digest keyed on the error code alone, and no `locations` array — so, unlike
+  a rule violation, this result carries no `physicalLocation` and therefore no
+  filesystem path anywhere. (There is no offending element to anchor: the
+  input never became an invoice.)
 
 The remaining surfaces relay the same error code (measured: `gitlab` as
 `check_name`, `github` as `title=`, `azure` as `code=`, `text` as an

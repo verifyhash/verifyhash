@@ -253,8 +253,23 @@ element. Mapping:
 - `runs[0].results[]` — one `result` per reported violation: `ruleId` = the rule
   id (every result's `ruleId` is a declared driver rule — no orphans),
   `message.text` = the violation message (falling back to the catalog title), and
-  a `locations[].logicalLocations[]` member (`kind: "member"`) naming the
-  offending field/XPath when one is known (omitted otherwise).
+  a `locations[]` entry when a location is known (omitted otherwise). That
+  entry carries both halves:
+  - `logicalLocations[]` (`kind: "member"`) naming the offending
+    field/XPath;
+  - `physicalLocation.artifactLocation.uri` = the invoice path exactly as you
+    typed it on the command line, URI-shaped (forward slashes; percent-encoded
+    only where a character is illegal in a URI reference — see
+    [REPORT-FORMATS.md](REPORT-FORMATS.md) "Path echo"), plus
+    `region.startLine` — the 1-based source line — **only** for a finding the
+    parser could attribute to a concrete element. An absence rule such as
+    BR-16 gets the `artifactLocation` and no `region`; there is never a
+    guessed line 1 and never a `startLine` of `0`. Both members are what
+    GitHub code scanning reads to place the inline annotation.
+- `results[].partialFingerprints["einvoice/v1"]` = a SHA-256 over the rule id
+  and the logical location **only** — deliberately not the source line, so a
+  finding that moves to a new line still de-duplicates against the previous
+  run.
 - Severity → SARIF `level`: `fatal` → `error`, `warning` → `warning`, everything
   else (`information`) → `note`.
 - Not-well-formed XML emits a single `error`-level result whose `ruleId` is

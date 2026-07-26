@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "fixtures/synth-ubl-bad-not-subject_ubl.xml"
+                }
+              }
             }
           ],
           "message": {

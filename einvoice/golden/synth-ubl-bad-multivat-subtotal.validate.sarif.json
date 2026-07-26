@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-ubl-bad-multivat-subtotal.xml"
+                }
+              }
             }
           ],
           "message": {
@@ -32,7 +37,12 @@
                   "kind": "member",
                   "name": "cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-ubl-bad-multivat-subtotal.xml"
+                }
+              }
             }
           ],
           "message": {

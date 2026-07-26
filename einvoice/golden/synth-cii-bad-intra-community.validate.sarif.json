@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-cii-bad-intra-community.xml"
+                }
+              }
             }
           ],
           "message": {

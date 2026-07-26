@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:TaxExemptionReason"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-cii-bad-export.xml"
+                }
+              }
             }
           ],
           "message": {

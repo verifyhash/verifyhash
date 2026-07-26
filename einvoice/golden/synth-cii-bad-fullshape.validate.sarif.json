@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:GrandTotalAmount"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-cii-bad-fullshape.xml"
+                }
+              }
             }
           ],
           "message": {

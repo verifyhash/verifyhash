@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "ram:SellerTradeParty/ram:DefinedTradeContact"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml"
+                }
+              }
             }
           ],
           "message": {
@@ -32,7 +37,12 @@
                   "kind": "member",
                   "name": "ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:IBANID"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml"
+                }
+              }
             }
           ],
           "message": {
@@ -52,7 +62,12 @@
                   "kind": "member",
                   "name": "ram:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/synthetic/synth-cii-bad-xrechnung-nocontact.xml"
+                }
+              }
             }
           ],
           "message": {

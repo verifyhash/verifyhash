@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "cac:BillingReference/cac:InvoiceDocumentReference"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "fixtures/synth-ubl-bad-corrected_ubl.xml"
+                }
+              }
             }
           ],
           "message": {

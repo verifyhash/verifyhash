@@ -12,7 +12,12 @@
                   "kind": "member",
                   "name": "/EmbeddedFiles filespec /AFRelationship"
                 }
-              ]
+              ],
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "corpus/pdf/facturx-afrel-bad.pdf"
+                }
+              }
             }
           ],
           "message": {

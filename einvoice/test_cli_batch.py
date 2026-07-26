@@ -26,6 +26,11 @@ Asserted (each maps to a task acceptance criterion):
      human summary but preserves the exit code.
   5. An all-pass dir -> exit 0; an empty dir / zero-match glob -> file_count 0 +
      explicit note + exit 0, no traceback.
+  6. (T-VHUX2.4) the human summary NAMES the rule ids behind its counts, caps
+     that listing with an honest omission disclosure, and prints exactly one
+     ``einvoice --explain <RULE-ID>`` line whose id is taken from a rule THIS
+     run violated — proven on a fixture set whose rules are not the ones the
+     feature was developed against.
 """
 
 import io
@@ -341,6 +346,122 @@ class BatchJsonCarriesRemediation(unittest.TestCase):
                 # The CLI record additionally keeps its historical `element`
                 # key, always equal to `field`.
                 self.assertEqual(cli_rec["element"], cli_rec["field"])
+
+
+class BatchTextNamesItsRules(unittest.TestCase):
+    """(T-VHUX2.4) the human batch summary must name the rule ids it already
+    computed, and route the reader onward — honestly, and without hard-coding.
+
+    Both tests below are anti-regression proofs for the two ways this feature
+    can be faked: printing a canned example rule id, and truncating a long
+    listing without admitting it.
+    """
+
+    def _explained_ids(self, out):
+        """Every id printed on an ``einvoice --explain <ID>`` line, in order."""
+        import re
+        return re.findall(r"--explain\s+(\S+)", out)
+
+    def test_explain_hint_uses_a_real_violated_rule(self):
+        """The `--explain` id comes from THIS run's findings, not a constant.
+
+        The proof needs a run whose violated rules are NOT the ones the feature
+        was developed against (examples/01-missing-fields fires BR-DE-2 and
+        BR-DE-15), so it uses the mixed corpus dir this file already builds:
+        under the CLI default profile en16931 the only violated rule in it is
+        BR-CL-01, from creditnote-invalid-typecode_ubl.xml. A hard-coded
+        BR-DE-2 (or any other canned id) fails here twice over — it is not in
+        the run's finding set, and the run's finding set does not contain it.
+        """
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            make_mixed_dir(tmp)
+            text = _run("validate-batch", tmp)
+            machine = _run("validate-batch", "--json", tmp)
+        self.assertEqual(text.returncode, EXIT_FAIL, text.stderr)
+        violated = {v["rule"]
+                    for f in json.loads(machine.stdout)["files"]
+                    for v in f.get("violations", [])}
+        self.assertTrue(violated, "the mixed dir must fire violations")
+        # The fixture set is genuinely a different one from the development
+        # fixture — otherwise a hard-coded BR-DE-2 would pass by luck.
+        self.assertNotIn("BR-DE-2", violated)
+        self.assertNotIn("BR-DE-15", violated)
+
+        ids = self._explained_ids(text.stdout)
+        self.assertEqual(len(ids), 1,
+                         "exactly one discoverability line per run; got %r"
+                         % (ids,))
+        self.assertIn(ids[0], violated,
+                      "the --explain hint names %r, which this run did not "
+                      "violate (violated: %s) — it is hard-coded, not derived"
+                      % (ids[0], sorted(violated)))
+        # And the id it names is one the summary actually put on screen, so the
+        # reader can see where the suggestion came from.
+        self.assertIn(ids[0], text.stdout.split("--explain")[0])
+
+    def test_batch_rule_list_cap_discloses_omission(self):
+        """A truncated per-file listing states what it hid, out of how many, and
+        which format shows everything.
+
+        Needs a file with MORE findings than einvoice.report's one cap
+        constant, which no committed fixture has (the corpus fixtures used above
+        fire 1-5 findings each), so a minimal-but-well-formed UBL Invoice is
+        synthesised into the temp dir: it parses, then trips the whole
+        mandatory-field family at once. Measured under xrechnung: 15 findings
+        (13 fatal, 2 warning) against a cap of 11. The exact rule ids are never
+        asserted — only the arithmetic of the disclosure — so a rule-set change
+        cannot make this test lie.
+        """
+        import tempfile
+        from einvoice.report import _BATCH_RULE_LIST_CAP as CAP
+        minimal = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:'
+            'Invoice-2"\n'
+            '         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:'
+            'CommonAggregateComponents"\n'
+            '         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:'
+            'CommonBasicComponents">\n'
+            '  <cbc:ID>BATCH-CAP-1</cbc:ID>\n'
+            '</Invoice>\n'
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "sparse.xml"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(minimal)
+            text = _run("validate-batch", "--profile", "xrechnung", tmp)
+            machine = _run("validate-batch", "--profile", "xrechnung",
+                           "--json", tmp)
+        self.assertEqual(text.returncode, EXIT_FAIL, text.stderr)
+        violations = json.loads(machine.stdout)["files"][0]["violations"]
+        total = len(violations)
+        self.assertGreater(total, CAP,
+                           "fixture no longer exceeds the cap (%d findings, "
+                           "cap %d) — this test would prove nothing" % (total,
+                                                                       CAP))
+        out = text.stdout
+        fatal = sum(1 for v in violations if v["severity"] == "fatal")
+        # (a) the explicit total, so the reader knows the listing is partial.
+        self.assertIn("%d finding(s) total: %d fatal, %d non-fatal"
+                      % (total, fatal, total - fatal), out)
+        # (b) the omitted count, the total, and the format that carries all.
+        self.assertIn("... %d more not shown — use --format json for all %d"
+                      % (total - CAP, total), out)
+        # (c) the listing really is capped: exactly CAP `[severity] RULE:` lines.
+        listed = [ln for ln in out.splitlines()
+                  if ln.startswith("    [") and "]" in ln]
+        self.assertEqual(len(listed), CAP,
+                         "expected exactly %d listed findings, got %d:\n%s"
+                         % (CAP, len(listed), "\n".join(listed)))
+        # (d) the aggregate rule block is bounded by the SAME constant.
+        aggregate = out.split("Most violated rules")[1]
+        rules_shown = [ln for ln in aggregate.splitlines()
+                       if ln.startswith("  ") and " file" in ln]
+        self.assertEqual(len(rules_shown), CAP)
+        # (e) and the format it names is a real batch format, so the advice
+        #     actually works on a directory.
+        self.assertEqual(machine.returncode, EXIT_FAIL, machine.stderr)
 
 
 if __name__ == "__main__":

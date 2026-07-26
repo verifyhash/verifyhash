@@ -67,11 +67,12 @@ HONEST LIMITS
     across nine wildly different renderings, and "the id appears nowhere in the
     output" is exactly the defect class. It cannot tell "listed as a finding"
     from "mentioned in prose"; the surfaces here have no such prose.
-  * ``validate-batch`` text names ZERO rule ids today. That is REAL and it is
-    NOT fixed here — it is T-VHUX2.4's chartered work. It sits in the allowlist
-    with that reason, and the allowlist entry is measured, so when T-VHUX2.4
-    lands, this test goes red and forces the declaration to be updated rather
-    than quietly left lying.
+  * ``validate-batch`` text named ZERO rule ids when this file was written, and
+    sat in the allowlist with that measured reason. T-VHUX2.4 (2026-07-25) made
+    it list them; the measured allowlist entry went red on the spot, exactly as
+    designed, and the surface was PROMOTED into ``FINDING_SET_SURFACES`` below
+    as a capped full-set surface. The mechanism is the point: an exemption here
+    cannot outlive the defect it excused.
 
 Runs against a WHEEL-ONLY install image (``test_wheel_self_report.build_install_image``
 — reused, deliberately not reimplemented) with cwd outside the repository:
@@ -251,6 +252,25 @@ FINDING_SET_SURFACES = (
     # failed_fatal_rules with `if v["severity"] == "fatal"`. Expected set = the
     # FATAL SUBSET of the --format json reference, re-derived per fixture; if the
     # receipt ever drops a fatal rule id, this fails.
+    # PROMOTED out of FINDING_SET_OMISSION_ALLOWLIST by T-VHUX2.4. It used to be
+    # the allowlist's second entry ("names counts only and zero rule ids"); the
+    # exemption's own reason said it was chartered to this task, and
+    # test_allowlisted_surfaces_really_render_no_finding_ids is what forced the
+    # promotion the moment the surface started listing ids. report_format stays
+    # None because 'text' is already declared above for single-file validate —
+    # this is the DIFFERENT batch rendering behind the same word.
+    Surface(
+        key="validate-batch --format text",
+        report_format=None,
+        argv=lambda case: ["validate-batch", case.batch_dir, "--profile",
+                           PROFILE, "--format", "text"],
+        severities=EVERY_SEVERITY,
+        capped=True,
+        why=("human listing: einvoice.report._BATCH_RULE_LIST_CAP truncates a "
+             "long per-file listing (and the aggregate rule block), and must "
+             "then disclose the omitted count and the total in the single-file "
+             "wording"),
+    ),
     Surface(
         key="einvoice receipt",
         report_format=None,
@@ -275,16 +295,6 @@ FINDING_SET_OMISSION_ALLOWLIST = {
                 "slot to drop findings from"),
         report_format="badge",
         argv=_validate("badge"),
-    ),
-    "validate-batch --format text": Omission(
-        reason=("MEASURED-REAL omission, OUT OF SCOPE here and chartered to "
-                "T-VHUX2.4: the batch summary names counts only "
-                "('FAIL  broken.xml  2 fatal, 0 warning') and zero rule ids"),
-        report_format=None,      # 'text' is already declared as a full-set
-                                 # surface for single-file validate; this is the
-                                 # DIFFERENT batch rendering of the same word.
-        argv=lambda case: ["validate-batch", case.batch_dir, "--profile",
-                           PROFILE, "--format", "text"],
     ),
 }
 
@@ -378,6 +388,15 @@ def parity_failures(surface, case, output, cap):
         else:
             # A capped surface may omit — but only by truncating the TAIL, and
             # only if it says so. Anything else is still a silent drop.
+            #
+            # ``cap + 1`` is the ONE human rule-id budget, expressed from the
+            # single-file surface's side: it renders its headline finding in
+            # full and then lists ``_NON_FATAL_LIST_CAP`` more. The batch text
+            # surface has no headline finding, so einvoice.report spends the
+            # identical budget as a flat ``_BATCH_RULE_LIST_CAP == cap + 1``
+            # (documented at its definition). Both therefore put the same number
+            # of rule ids in front of the reader, and this single assertion
+            # holds them to it.
             if len(got) != cap + 1:
                 failures.append(
                     "capped surface rendered %d id(s); a truncated listing "
@@ -604,10 +623,11 @@ class FindingSetParity(unittest.TestCase):
         """Keep the allowlist honest and self-expiring.
 
         Each allowlisted surface is executed and must render ZERO rule ids. If
-        one starts listing findings (T-VHUX2.4 is chartered to make
-        `validate-batch` text do exactly that), this goes red and the surface
-        must be MOVED into FINDING_SET_SURFACES — an exemption cannot outlive
-        its reason.
+        one starts listing findings, this goes red and the surface must be MOVED
+        into FINDING_SET_SURFACES — an exemption cannot outlive its reason. That
+        has already happened once: `validate-batch --format text` was the second
+        entry here until T-VHUX2.4 made it name rule ids, at which point this
+        test forced its promotion.
         """
         for key, entry in sorted(FINDING_SET_OMISSION_ALLOWLIST.items()):
             for case in self.cases:

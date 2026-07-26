@@ -137,8 +137,15 @@ Subcommands:
                batch_exit_code / build_batch_text) verbatim — it re-implements
                no aggregation or rule logic; see that module for the aggregate
                ``einvoice-conformance-batch/v1`` schema. Prints a per-file
-               PASS/FAIL/ERROR summary plus an aggregate tally (or, with
-               --json, the aggregate batch dict). ``--quiet`` suppresses the
+               PASS/FAIL/ERROR line that NAMES the rule ids behind its counts
+               (``[fatal] BR-DE-2: ...``, every severity, capped by
+               ``einvoice.report._BATCH_RULE_LIST_CAP`` with an explicit
+               "N more not shown" disclosure), then the aggregate tally, a
+               'most violated rules' block (rule id + how many files it broke,
+               same cap) and ONE ``einvoice --explain <RULE-ID>`` line whose id
+               is taken from a rule this run actually violated — never a
+               hard-coded example. With --json the aggregate batch dict is
+               emitted instead, byte-unchanged. ``--quiet`` suppresses the
                human summary but preserves the exit code (and still emits the
                JSON when --json is set). A zero-match glob / empty directory is
                reported honestly as ``file_count: 0`` with a note, exit 0 — not
@@ -995,7 +1002,10 @@ def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal",
     Every batched file flows through the identical ``build_report`` ->
     ``validate_file`` / ``parse_file`` path, so the DTD/XXE/resource hardening
     applies to every input unchanged (a hostile DOCTYPE file becomes an ERROR
-    entry, never a parse or a crash). Prints the human per-file summary via
+    entry, never a parse or a crash). Prints the human per-file summary — which
+    since T-VHUX2.4 names the rule ids behind each file's counts, ranks the most
+    violated rules across the run, and points at ``einvoice --explain`` with a
+    rule id from this very run — via
     :func:`einvoice.report.build_batch_text` unless ``--quiet``; with ``--json``
     emits the aggregate batch dict as ``json.dumps(batch, indent=2)`` (still
     emitted under ``--quiet``). Returns

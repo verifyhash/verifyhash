@@ -652,9 +652,41 @@ pre-commit hook and `validate-batch` on a nightly sweep with **one** parser —
 `element` was the one key the batch records were missing before 0.2.7, and
 `test_json_surface_parity.py` now compares the two surfaces so it cannot recur.
 Output
-is a per-file `PASS`/`FAIL`/`ERROR` summary plus an aggregate tally, or the
-aggregate `einvoice-conformance-batch/v1` dict with `--json`; `--quiet` suppresses
-the human summary but keeps the exit code (and still emits JSON under `--json`). An
+is a per-file `PASS`/`FAIL`/`ERROR` line **plus the rule ids behind its counts**,
+an aggregate tally, a "most violated rules" ranking and one
+`einvoice --explain <RULE-ID>` pointer — or the aggregate
+`einvoice-conformance-batch/v1` dict with `--json`; `--quiet` suppresses
+the human summary but keeps the exit code (and still emits JSON under `--json`).
+Concretely, `einvoice validate-batch --profile xrechnung examples/01-missing-fields`
+prints
+
+```
+FAIL  examples/01-missing-fields/broken.xml  2 fatal, 0 warning
+  3 finding(s) total: 2 fatal, 1 non-fatal (--format json carries every field of each)
+    [fatal] BR-DE-2: The group 'SELLER CONTACT' (BG-6) must be transmitted.
+    [fatal] BR-DE-15: The element 'Buyer reference' (BT-10) must be transmitted.
+    [information] BR-DE-TMP-32: The invoice should state the delivery/service date: …
+PASS  examples/01-missing-fields/fixed.xml  conformant
+  1 finding(s) total: 0 fatal, 1 non-fatal (--format json carries every field of each)
+    [information] BR-DE-TMP-32: The invoice should state the delivery/service date: …
+
+2 files: 1 passed, 1 failed  (2 fatal, 0 warning across all files)
+
+Most violated rules (rule id, files affected):
+  BR-DE-TMP-32  2 files
+  BR-DE-2       1 file
+  BR-DE-15      1 file
+
+Explain any rule above: einvoice --explain BR-DE-2
+```
+
+Two honest limits on that listing. Each file lists at most **11** findings
+(`einvoice.report._BATCH_RULE_LIST_CAP`, the batch twin of the single-file
+report's 10-plus-headline budget) and then says
+`... N more not shown — use --format json for all N`; the "most violated rules"
+block is bounded by the same number and discloses the same way. And note a file
+can `PASS` and still list findings — `fixed.xml` above is conformant, but the
+advisory `BR-DE-TMP-32` is still worth seeing. An
 **empty directory or zero-match glob** is reported honestly as `file_count: 0`
 with a `note`, exit `0` — never a traceback. The **exit code** follows the
 documented report precedence (fatal outranks parse): `0` when every file passes,
@@ -989,7 +1021,8 @@ Aggregate exit code (documented precedence — **fatal outranks parse**):
 
 Batch mode supports `--format json` (default, `--pretty` for indented),
 `--format junit` (an aggregate `<testsuites>` with one `<testsuite>` per file)
-and `--format text` (a concise one-line-per-file summary). `--format
+and `--format text` (a status line per file, the rule ids behind its counts, a
+"most violated rules" ranking and an `--explain` pointer). `--format
 sarif/html/badge` validate a *single* file and are rejected on a directory with
 a clear error. Single-file invocation is completely unchanged.
 

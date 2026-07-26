@@ -73,6 +73,7 @@ import hashlib
 import html
 import json
 import os
+import re
 import sys
 from collections import Counter
 from xml.sax.saxutils import escape, quoteattr
@@ -618,12 +619,193 @@ def batch_exit_code(batch):
     return EXIT_OK
 
 
+#: How many rule ids ONE capped human batch listing may name before it
+#: truncates. Used by BOTH human listings ``build_batch_text`` renders (the
+#: per-file findings and the 'most violated rules' aggregate) so there is a
+#: single budget and a single truncation sentence, never a second convention.
+#:
+#: WHY 11 AND NOT 10. This is the batch twin of the single-file human cap
+#: ``einvoice.cli._NON_FATAL_LIST_CAP`` (= 10), and it is deliberately ONE MORE,
+#: because the two surfaces count differently and the READER should see the same
+#: number of rule ids either way: the single-file report renders its headline
+#: finding in full (rule id, message, offending element, fix hint, rule page)
+#: and then lists ``_NON_FATAL_LIST_CAP`` FURTHER findings — 1 + 10 = 11 rule ids
+#: on screen before it says "... N more not shown". A batch file line carries
+#: counts, not a headline rule, so this listing names 11 directly.
+#:
+#: ``report.py`` must NOT import ``einvoice.cli`` (cli imports report; that would
+#: be an import cycle), so the relationship is documented here rather than
+#: computed — and it is PINNED by test_finding_set_parity.py, which reads the
+#: CLI's cap out of the installed module and requires a truncated batch listing
+#: to name exactly ``cap + 1`` ids with the single-file disclosure wording.
+_BATCH_RULE_LIST_CAP = 11
+
+#: Ordering rank for the human batch listings: what blocks conformance first.
+#: Anything unknown sorts after the three documented severities rather than
+#: raising, so a future severity degrades to "listed last", never to a crash.
+_BATCH_SEVERITY_RANK = {"fatal": 0, "warning": 1, "information": 2}
+
+
+def _rule_sort_key(rule_id):
+    """Natural sort key for a rule id, so BR-DE-2 sorts BEFORE BR-DE-15.
+
+    Plain lexicographic ordering puts 'BR-DE-15' before 'BR-DE-2', which reads
+    as a bug in a printed list. Splitting on digit runs and comparing the
+    numeric runs as integers fixes that. Every element is an ``(int, str)``
+    pair — numeric runs are ``(n, "")`` and literal runs ``(-1, text)`` — so the
+    tuples always compare against each other without a type error.
+    """
+    parts = re.split(r"(\d+)", rule_id)
+    return tuple((int(p), "") if p.isdigit() else (-1, p)
+                 for p in parts if p != "")
+
+
+def _batch_finding_sort_key(v):
+    """Deterministic order for one file's findings: fatals first, then rule id."""
+    return (_BATCH_SEVERITY_RANK.get(v.get("severity", ""),
+                                     len(_BATCH_SEVERITY_RANK)),
+            _rule_sort_key(v.get("rule", "")),
+            v.get("rule", ""))
+
+
+def _batch_truncation_sentence(omitted, total):
+    """The ONE truncation wording every capped listing in this module uses.
+
+    Byte-identical to the single-file report's (einvoice/cli.py, PASS and FAIL
+    paths alike): say how many entries were hidden, and name the format that
+    carries all of them. ``total`` is the FULL population, not the hidden
+    remainder, so the number agrees with the count printed above the listing.
+    ``--format json`` is a real batch format (``BATCH_FORMATS``), so the advice
+    is executable on a directory, not just on a single file.
+    """
+    return ("... %d more not shown — use --format json for all %d"
+            % (omitted, total))
+
+
+def _batch_file_finding_lines(report):
+    """The indented finding block under ONE file's status line.
+
+    Same shape as the single-file human report after T-VHFULL.1: an explicit
+    "N finding(s) total" line, then one ``[severity] RULE-ID: message`` line per
+    finding up to :data:`_BATCH_RULE_LIST_CAP`, then the honest truncation
+    sentence. A file with no findings gets no block at all (a clean PASS stays
+    the one line it has always been); a file that PASSED but carries advisory
+    findings DOES get one — examples/01-missing-fields/fixed.xml is conformant
+    yet still reports BR-DE-TMP-32, and hiding that was half the reason the
+    batch summary was unusable for triage.
+    """
+    violations = report.get("violations") or []
+    if not violations:
+        return []
+    total = len(violations)
+    fatal = sum(1 for v in violations if v.get("severity") == "fatal")
+    lines = ["  %d finding(s) total: %d fatal, %d non-fatal "
+             "(--format json carries every field of each)"
+             % (total, fatal, total - fatal)]
+    ordered = sorted(violations, key=_batch_finding_sort_key)
+    for v in ordered[:_BATCH_RULE_LIST_CAP]:
+        lines.append("    [%s] %s: %s"
+                     % (v.get("severity", ""), v.get("rule", ""),
+                        v.get("message", "")))
+    if total > _BATCH_RULE_LIST_CAP:
+        lines.append("    " + _batch_truncation_sentence(
+            total - _BATCH_RULE_LIST_CAP, total))
+    return lines
+
+
+def _batch_rule_frequency(batch):
+    """``(ordered_rule_ids, files_per_rule)`` across the whole batch.
+
+    The question a person pointing this at a directory of ERP exports is
+    actually asking is "which rule is breaking my export?", so rules are counted
+    by HOW MANY FILES they hit (a rule that fires twice in one invoice is one
+    broken file, not two). Order: most files first, then fatal before warning
+    before information, then natural rule id — fully deterministic, and for a
+    single-file batch identical to that file's own listing order, so the two
+    sections never disagree about which rules they showed.
+    """
+    files_per_rule = {}
+    rank_of_rule = {}
+    for r in batch.get("files", []):
+        seen = set()
+        for v in r.get("violations") or []:
+            rid = v.get("rule", "")
+            rank = _BATCH_SEVERITY_RANK.get(v.get("severity", ""),
+                                            len(_BATCH_SEVERITY_RANK))
+            rank_of_rule[rid] = min(rank_of_rule.get(rid, rank), rank)
+            if rid not in seen:
+                seen.add(rid)
+                files_per_rule[rid] = files_per_rule.get(rid, 0) + 1
+    ordered = sorted(files_per_rule,
+                     key=lambda rid: (-files_per_rule[rid], rank_of_rule[rid],
+                                      _rule_sort_key(rid), rid))
+    return ordered, files_per_rule
+
+
+def _batch_aggregate_lines(ordered, files_per_rule):
+    """The 'most violated rules' block: rule id + how many files it broke."""
+    if not ordered:
+        return []
+    shown = ordered[:_BATCH_RULE_LIST_CAP]
+    width = max(len(rid) for rid in shown)
+    lines = ["", "Most violated rules (rule id, files affected):"]
+    for rid in shown:
+        n = files_per_rule[rid]
+        lines.append("  %-*s  %d file%s"
+                     % (width, rid, n, "" if n == 1 else "s"))
+    if len(ordered) > _BATCH_RULE_LIST_CAP:
+        lines.append("  " + _batch_truncation_sentence(
+            len(ordered) - _BATCH_RULE_LIST_CAP, len(ordered)))
+    return lines
+
+
+def _batch_explain_hint(ordered, rank_lookup):
+    """The ONE ``einvoice --explain <RULE-ID>`` line for the whole run, or None.
+
+    The id is always taken from a rule THIS run actually violated — never a
+    hard-coded example — and always from a rule the output just printed, so the
+    reader can see where it came from. Choice: the first FATAL among the shown
+    rules (i.e. most files affected, ties broken by rule id), falling back to
+    the most-affecting rule of any severity when the shown block holds no fatal.
+    """
+    shown = ordered[:_BATCH_RULE_LIST_CAP]
+    if not shown:
+        return None
+    for rid in shown:
+        if rank_lookup(rid) == "fatal":
+            return rid
+    return shown[0]
+
+
 def build_batch_text(batch):
     """Render a batch report as a concise, human-readable text summary.
 
-    One status line per file (``PASS`` / ``FAIL`` / ``ERROR``) followed by an
-    aggregate tally line. An empty directory prints a single 'no invoice files
-    found' line. Pure projection of the batch dict — no rule logic.
+    Per file: a status line (``PASS`` / ``FAIL`` / ``ERROR``) and, when that
+    file has findings, the rule ids behind its counts (capped by
+    :data:`_BATCH_RULE_LIST_CAP`, with an honest truncation sentence). Then the
+    aggregate tally line, a 'most violated rules' block, and ONE
+    ``einvoice --explain <RULE-ID>`` line naming a rule this run really
+    violated. An empty directory prints a single 'no invoice files found' line.
+
+    Pure projection of the batch dict — no rule logic, no re-aggregation of
+    anything the batch engine did not already compute.
+
+    MEASURED defect this closes (T-VHUX2.4, 2026-07-25): over
+    ``examples/01-missing-fields`` this printed
+    ``FAIL  broken.xml  2 fatal, 0 warning`` and named ZERO rule ids, while the
+    very dict it was handed already carried BR-DE-2, BR-DE-15 and
+    BR-DE-TMP-32. A directory of exported invoices is exactly how an ERP
+    developer evaluates a validator, and this was the only command at that
+    scale — so every remediation asset the product has (``--explain``, the fix
+    hints, the 297 rule pages) was unreachable from it and the only route to a
+    rule id was re-running the tool file by file.
+
+    Unchanged on purpose: the ERROR line form, the 'no invoice files found'
+    line, the totals line and its position at the end of the tally, and the
+    fact that ``--quiet`` renders none of this (the CLI simply does not call
+    here). Every line added by this function is either indented or a labelled
+    block after the totals line, so ``grep '^FAIL'`` / ``grep '^PASS'`` over a
+    batch keeps meaning "one match per file".
     """
     root = batch.get("root", "")
     file_count = batch.get("file_count", 0)
@@ -634,8 +816,11 @@ def build_batch_text(batch):
     for r in batch.get("files", []):
         src = r.get("source", "")
         if r.get("error"):
+            # An errored file was never parsed, so it has no findings to name;
+            # its line form is contractual and stays exactly as it was.
             lines.append("ERROR %s  %s" % (src, r.get("error")))
-        elif r.get("fatal_count", 0) > 0:
+            continue
+        if r.get("fatal_count", 0) > 0:
             lines.append("FAIL  %s  %d fatal, %d warning"
                          % (src, r.get("fatal_count", 0),
                             r.get("warning_count", 0)))
@@ -644,6 +829,7 @@ def build_batch_text(batch):
             tail = (" (%d warning%s)" % (wc, "" if wc == 1 else "s")
                     if wc else "")
             lines.append("PASS  %s  conformant%s" % (src, tail))
+        lines.extend(_batch_file_finding_lines(r))
 
     failed = batch.get("failed_file_count", 0)
     passed = file_count - failed
@@ -653,6 +839,21 @@ def build_batch_text(batch):
         "(%d fatal, %d warning across all files)"
         % (file_count, "" if file_count == 1 else "s", passed, failed,
            batch.get("fatal_count", 0), batch.get("warning_count", 0)))
+
+    ordered, files_per_rule = _batch_rule_frequency(batch)
+    lines.extend(_batch_aggregate_lines(ordered, files_per_rule))
+
+    severity_of = {}
+    for r in batch.get("files", []):
+        for v in r.get("violations") or []:
+            rid = v.get("rule", "")
+            sev = v.get("severity", "")
+            if rid not in severity_of or sev == "fatal":
+                severity_of[rid] = sev
+    hint = _batch_explain_hint(ordered, lambda rid: severity_of.get(rid, ""))
+    if hint:
+        lines.append("")
+        lines.append("Explain any rule above: einvoice --explain %s" % hint)
     return "\n".join(lines) + "\n"
 
 

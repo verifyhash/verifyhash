@@ -99,9 +99,13 @@ python3 einvoice.py validate --profile xrechnung examples/01-missing-fields/fixe
 ```
 
 druckt nach der menschenlesbaren Zusammenfassung die Zeile `exit=0`. Die
-kaputte Rechnung fällt mit Exit-Code **1** durch; die Ausgabe nennt die erste
-verletzte fatale Regel samt betroffenem XML-Element und den beiden Wegen zur
-Erklärung dieser Regel:
+kaputte Rechnung fällt mit Exit-Code **1** durch. Die Ausgabe führt die erste
+verletzte fatale Regel ausführlich auf — mit betroffenem XML-Element und den
+beiden Wegen zu ihrer Erklärung —, nennt danach die Gesamtzahl der Befunde und
+listet unter `also violated:` jede weitere Regel, die derselbe Lauf verletzt
+hat. Diese Datei löst drei Befunde auf einmal aus — zwei fatale
+Regelverletzungen und einen nicht-fatalen Hinweis —, und ein einziger Lauf
+zeigt alle drei:
 
 ```sh
 python3 einvoice.py validate --profile xrechnung examples/01-missing-fields/broken.xml
@@ -113,8 +117,18 @@ FAIL: examples/01-missing-fields/broken.xml
   offending element: cac:AccountingSupplierParty/cac:Party/cac:Contact
   how to fix: einvoice --explain BR-DE-2
   rule page:  https://verifyhash.com/einvoice/rules/BR-DE-2/
+  3 finding(s) total: 2 fatal, 1 non-fatal (--format json carries every field of each)
+  also violated:
+    [fatal] BR-DE-15: The element 'Buyer reference' (BT-10) must be transmitted.
+    [information] BR-DE-TMP-32: The invoice should state the delivery/service date: BT-72 'Actual delivery date', BG-14 'Invoicing period', or BG-26 'Invoice line period' on every line.
 Syntax-binding warnings: 0
 ```
+
+Sie müssen also nicht Regel für Regel neu prüfen: ein Lauf nennt alles, was zu
+reparieren ist. Die `also violated:`-Liste ist bei 10 Zeilen gedeckelt; bei
+mehr Befunden sagt die Ausgabe, wie viele sie ausgelassen hat, und verweist auf
+`--format json`, das nie kürzt. Element und Fix-Wege bekommt nur die Kopfregel;
+dieselbe Tiefe zu jeder weiteren Regel liefert `einvoice --explain BR-DE-15`.
 
 `einvoice --explain BR-DE-2 --lang de` gibt denselben Katalogeintrag mit dem
 amtlichen deutschen Wortlaut aus (`--lang de` färbt auch die Meldung in der

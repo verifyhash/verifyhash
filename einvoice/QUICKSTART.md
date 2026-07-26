@@ -209,23 +209,31 @@ FAIL: broken.xml
   offending element: cbc:BuyerReference
   how to fix: einvoice --explain BR-DE-15
   rule page:  https://verifyhash.com/einvoice/rules/BR-DE-15/
+  1 finding(s) total: 1 fatal, 0 non-fatal (--format json carries every field of each)
 Syntax-binding warnings: 0
 exit=1
 ```
 
 Exit **1** = "at least one implemented fatal rule failed." The human summary
-names only the *first* fatal rule and the element it looked for; the complete
-list comes out under `--json` next. The other exit codes are `2` (usage error)
-and `3` (not-well-formed XML) — the full table is
-[`EXIT-CODES.md`](EXIT-CODES.md).
+details the first fatal rule in full — the element it looked for and the two
+routes to what that rule wants — then states the total and lists every other
+rule the same run violated. This file breaks exactly one rule, so the total
+line reads `1 fatal, 0 non-fatal` and there is no `also violated:` list under
+it; the checkout walk at the end of this page runs the identical summary
+against a fixture that breaks three, where both the count and that list show
+up. `--json`, next, is the surface that carries every *field* of each finding.
+The other exit codes are `2` (usage error) and `3` (not-well-formed XML) — the
+full table is [`EXIT-CODES.md`](EXIT-CODES.md).
 
-The last two indented lines are the two ways to find out what the rule wants:
-`einvoice --explain BR-DE-15` prints the catalogue entry offline (next
-section), and the `rule page` URL is the same rule written up for a browser —
-useful when the person who has to fix the invoice is not the person running
-the CI job. The rule id in both is always the one **this run** hit; the page
-line is emitted only for rules the shipped remediation catalogue actually
-covers, so it never points at a URL that does not exist.
+The `how to fix` and `rule page` lines are the two ways to find out what the
+rule wants: `einvoice --explain BR-DE-15` prints the catalogue entry offline
+(next section), and the `rule page` URL is the same rule written up for a
+browser — useful when the person who has to fix the invoice is not the person
+running the CI job. The rule id in both is always the one **this run** hit; the
+page line is emitted only for rules the shipped remediation catalogue actually
+covers, so it never points at a URL that does not exist. Only that headline
+rule gets the element/how-to-fix detail; any rule named under `also violated:`
+takes the same `--explain` treatment on demand.
 
 Note what did **not** happen: the same file under the default profile
 (`einvoice validate broken.xml`) exits `0`, because `BR-DE-15` is not an
@@ -430,6 +438,7 @@ FAIL: cii-broken.xml
   offending element: ram:ApplicableHeaderTradeAgreement/ram:BuyerReference
   how to fix: einvoice --explain BR-DE-15
   rule page:  https://verifyhash.com/einvoice/rules/BR-DE-15/
+  1 finding(s) total: 1 fatal, 0 non-fatal (--format json carries every field of each)
 Syntax-binding warnings: 0
 exit=1
 ```

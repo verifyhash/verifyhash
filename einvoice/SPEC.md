@@ -22,7 +22,7 @@ failing fixture in the vendored corpus.
 - **Rule stack the profile layers (outermost narrows innermost):**
   1. XML well-formedness
   2. UBL 2.1 XSD (`Invoice` schema) — structural validity
-  3. EN 16931 business rules (`BR-*`, `BR-CO-*`, `BR-CL-*`, `BR-S/Z/E/...-*`)
+  3. EN 16931 core business rules (`BR-*`, `BR-CO-*`, `BR-CL-*`, `BR-S/Z/E/...-*`)
   4. XRechnung CIUS restrictions (`BR-DE-*`) and code-list variants (`BR-DEX-*`)
 - **Authoritative references vendored in-repo:** the EN 16931 Schematron
   (`corpus/cen-en16931/ubl/schematron/`) and the KoSIT XRechnung test suite
@@ -195,22 +195,87 @@ Known gaps in this first slice — each is a deliberate cut, not an oversight:
    pinned unit vectors in `test_xrechnung.py`. The `BR-DEX-*` extension
    profile and the `BR-DE-CVD-*`/`BR-TMP-*` CVD/temporary family have since
    been implemented as well (see `COVERAGE.md`).
-3. **EN 16931 breadth:** ~180 further `BR-*` rules are unimplemented, including
-   most `BR-CO-*` arithmetic (only 10/13/14/15 chosen), the full VAT-category
-   matrices for E/G/O/IC/IP/IG/AE/K/L/M categories (only S-01, Z-01 chosen),
-   allowance/charge rules (BR-31…BR-44), and the `BR-CL-*` code-list family
-   (only BR-CL-01 chosen).
-4. **Code lists:** only UNTDID 1001 (type code) is checked, and only for
-   presence-in-list, not the XRechnung-restricted subset. ISO 4217 currency,
-   UNCL5305 VAT categories, ISO 3166 country, ISO 6523 scheme IDs, EAS/electronic
-   address schemes, and unit-of-measure (UNECERec20) lists are deferred.
-5. **XSD depth:** Layer S-XSD assumes the UBL 2.1 schema files resolve locally;
-   full offline schema-resolution hardening is deferred.
-6. **Calculation tolerance / rounding:** BR-CO-* arithmetic will need the EN 16931
-   half-up rounding and 2-decimal tolerance model; the precise tolerance policy
-   is not yet specified here.
-7. **Signatures, attachments (BG-24 additional documents), PDF/A-3 (ZUGFeRD
-   hybrid) containers:** entirely out of scope.
+3. **EN 16931 breadth: SHIPPED** (no longer a gap). The engine asserts
+   **297 business rules** — `python3 -m einvoice info --json` reports
+   `rule_count` and `coverage.business_rules.total_asserted`, and
+   `COVERAGE.md` is the per-rule inventory (id, syntax, severity, source
+   artifact, verbatim rule text). Measured against each vendored CEN artifact
+   the split is **219 implemented + 4 excluded + 0 missing = 223 official
+   `BR-*` asserts**, identically in the `en16931-ubl` and the `en16931-cii`
+   universe. So the families this document once listed as sampled are
+   complete, not chosen: the `BR-CO-*` arithmetic, the VAT-category matrices
+   (S/Z/E/AE/K/G/O/IC/IP/IG/L/M), and the allowance/charge rules
+   `BR-31`…`BR-44` are all asserted. The **only** official ids the engine does
+   not assert are the four `BR-CO-05`, `BR-CO-06`, `BR-CO-07`, `BR-CO-08`,
+   which CEN ships as literal `test="true()"` tautologies in BOTH artifacts:
+   they can never fire, so no implementation of them could ever be
+   differentially proven, and they are permanently excluded with verbatim
+   artifact evidence in `COVERAGE.md` §Exclusions. `test_coverage_gap.py`
+   re-parses the `.sch` files on every run and fails if fireable-missing is
+   ever nonzero, so this paragraph cannot silently go stale.
+4. **Code lists: SHIPPED** (no longer a gap). Every fireable `BR-CL-*` assert
+   the vendored artifacts carry is implemented, in BOTH the UBL and the CII
+   binding — `gen_coverage.py`'s deferred-codelist table
+   (`CODELIST_NOT_ASSERTED`) is now the EMPTY dict, and `COVERAGE.md`'s rule
+   table is the authoritative inventory. It spans UNTDID 1001 document type
+   (`BR-CL-01`), ISO 4217 currency (`BR-CL-03/04/05`), UNTDID 2005 / 2475 VAT
+   point date (`BR-CL-06`), UNTDID 1153 (`BR-CL-07`), UNTDID 4451 note subject
+   (`BR-CL-08`), the ISO 6523 ICD scheme ids (`BR-CL-10/11/21/26`), UNTDID 7143
+   item classification (`BR-CL-13`), ISO 3166-1 country (`BR-CL-14/15`),
+   UNCL 4461 payment means (`BR-CL-16`), the UNCL 5305 VAT-category subset
+   (`BR-CL-17/18`), UNCL 5189 / UNCL 7161 allowance and charge reasons
+   (`BR-CL-19/20`), the CEF VATEX exemption list (`BR-CL-22`), UN/ECE Rec 20
+   with the Rec 21 extension for unit codes (`BR-CL-23`), the MIMEMediaType
+   subset (`BR-CL-24`) and the CEF EAS electronic-address list (`BR-CL-25`).
+   The XRechnung-restricted variants sit on top as `BR-DE-*` / `BR-DEX-*`
+   (e.g. `BR-DEX-07` re-grades the endpoint scheme against the EAS *extension*
+   list). **The real limit, and it is not a deferral:** every list is
+   transcribed VERBATIM from the vendored Schematron at its pinned version into
+   `einvoice/codelists.py`, never enumerated from memory — so a code published
+   *after* that artifact (a new ISO 4217 or ICD entry) is rejected until the
+   corpus is re-vendored, and the UBL and CII sub-lists are pinned separately
+   where the official artifacts disagree (the CII UNTDID 1001 list carries 381
+   and 471/472/473/500/501; the UBL country list carries `SS` but not `AN`,
+   the CII one the reverse).
+5. **XSD depth:** no XSD structural validation is performed. Layer S-XSD
+   remains deferred — structurally, only XML well-formedness and the root
+   element are checked (with `einvoice/_xmlsec.py` refusing DTDs, entity
+   declarations and external-entity references on untrusted input), so a
+   document that parses but violates the UBL 2.1 / CII schema is still graded
+   on business rules alone. A green run therefore means "no implemented rule
+   fired", not "schema-valid".
+6. **Calculation tolerance / rounding:** the EN 16931 model IS implemented —
+   2-decimal quantisation with half-up rounding, plus the official
+   Schematron's own `round(x * 10 * 10) div 100` idiom where the artifact uses
+   it (that idiom is `floor(x + 0.5)`, which is neither Python's banker's
+   rounding nor plain half-up, and it is reproduced deliberately so our verdict
+   matches the official one bit for bit). The limit is that this is a
+   *reproduction*, not an independent numeric policy: the engine inherits the
+   artifact's tolerance behaviour, including its quirks, and the tolerance is
+   fixed — there is no knob to widen or tighten it, and no "close enough"
+   allowance beyond what the official `@test` itself grants.
+7. **Signatures, attachment payloads, PDF/A-3 conformance:**
+   - **XML signatures: out of scope.** No XAdES / enveloped signature is
+     parsed, and no certificate, chain or digest is cryptographically
+     verified. (`einvoice/_xmlsec.py` is parser *hardening* — DTD/entity
+     refusal and resource bounds — not signature checking.)
+   - **Attachments (BG-24 additional documents): references only.** The
+     *references* are graded (`BR-52` supporting-document reference, `BR-DE-22`
+     embedded-object filename, `BR-DEX-01` MIME code), but the base64 payload
+     itself is never decoded, rendered, virus-scanned or otherwise inspected.
+   - **PDF/A-3 (Factur-X / ZUGFeRD hybrid): read, identified, not certified.**
+     `einvoice validate invoice.pdf` opens the container, extracts the embedded
+     CII XML and grades it on the same rules as a raw `.xml`, and layers six
+     advisory container-declaration checks (`FX-CONTAINER-AFRELATIONSHIP`,
+     `FX-CONTAINER-AF`, `FX-CONTAINER-XMP`, `FX-CONTAINER-PROFILE`,
+     `FX-PDFA3-PART`, `FX-PDFA3-CONFORMANCE`). Those last two are the PDF/A-3
+     **identification** subset only — they check that the XMP *declares* part 3
+     and conformance level A/B/U. Font embedding, ICC / output-intent colour
+     and document tagging are NOT checked, so this is not a PDF/A-3 conformance
+     validator (that needs veraPDF-class tooling), and a file that lies in its
+     identification schema is out of scope. The reader handles classic-layout
+     PDFs; encrypted, cross-reference-stream (PDF 1.5+) and truncated files are
+     refused as `unsupported-container` (exit 3), never guessed at.
 
 ---
 

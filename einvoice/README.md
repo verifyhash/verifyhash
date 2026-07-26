@@ -1133,17 +1133,27 @@ A first slice earns further investment or it doesn't. The signal, timeboxed:
    `BR-DE-*` set, passing the full KoSIT XRechnung test suite** (not just the
    curated 32-vector corpus) with zero false positives — evidence the rule
    engine scales to real coverage without an architecture rewrite.
+   **→ MET.** (The threshold was written for a 20-rule first slice; it is kept
+   here verbatim as the record of what was actually promised. The engine now
+   asserts **297 business rules**, ~5x the bar, with the full `BR-DE-*` set
+   differential-proven against the official KoSIT artifact — see the status
+   paragraph below.)
 
 **KILL** if neither happens: write up what was learned, archive the repo, and
 stop. The corpus and harness remain useful artifacts either way.
 
-Current status against this metric: 219 core rules + the 55-rule XRechnung
-CIUS/CVD/extension layer shipped (each batch differential-proven at 100% against
-its official Schematron, UBL and CII legs; fireable-missing = 0 in both CEN
-universes, with the 4 official `test="true()"` tautologies `BR-CO-05`–`08`
-documented as the only never-provable ids), 0 vendors contacted. Metric #2's
-rule-count/`BR-DE` half is comfortably met; metric #1 (a vendor) is now the
-whole game.
+Current status against this metric: **297 business rules** asserted by the
+engine (`python3 -m einvoice info --json` → `rule_count`; the per-rule
+inventory is [`COVERAGE.md`](COVERAGE.md)). That covers the EN 16931 core —
+**219 implemented + 4 excluded + 0 missing = 223 official `BR-*` asserts**
+against each vendored CEN artifact, the same split in the UBL and the CII
+universe — plus the XRechnung CIUS/CVD/extension layer and the 21
+KoSIT-vendored `PEPPOL-EN16931-R*` rules. Each batch is differential-proven at
+100% against its official Schematron on both the UBL and the CII leg;
+fireable-missing = 0 in both CEN universes, with the 4 official `test="true()"`
+tautologies `BR-CO-05`–`08` documented as the only never-provable ids. Vendors
+contacted: 0. Metric #2 is therefore MET with room to spare; metric #1 (a
+vendor) is now the whole game.
 
 ---
 

@@ -537,6 +537,19 @@ ACTION_README = os.path.join(HERE, "action", "README.md")
 # Bound to the SAME live registry through the SAME helper — never a second
 # hard-coded count.
 CI_README = os.path.join(HERE, "ci", "README.md")
+# T-VHCLAIM.2: SPEC.md is not an install surface — it is the SCOPE document a
+# technical evaluator opens to decide whether to embed this engine instead of
+# the free official KoSIT validator. Its §6 "Honest NON-coverage" list carried
+# two SPECIFIC, credible denials of capabilities the engine has had for
+# releases: "~180 further BR-* rules are unimplemented … and the BR-CL-*
+# code-list family (only BR-CL-01 chosen)", and "only UNTDID 1001 (type code)
+# is checked". Against the live registry (len(engine_fireable_ids()), and
+# gen_coverage's CODELIST_NOT_ASSERTED, which is now the empty dict) both were
+# false — no count is repeated here, only derived. A specific denial is more
+# convincing to a reader than any headline — so the page argued the evaluator
+# out of the funnel. Bound here through the SAME helper and the SAME live
+# registry as the three install surfaces; never a second hard-coded count.
+SPEC_MD = os.path.join(HERE, "SPEC.md")
 # "… 286 business rules …" — the guarded claim grammar shared by both
 # surfaces. Reword the docs only together with this pattern.
 N_BUSINESS_RULES_RE = re.compile(r"\b(\d+)\s+business\s+rules\b")
@@ -549,7 +562,7 @@ def _read(path):
 
 
 class InstallSurfaceRuleCountBound(unittest.TestCase):
-    """pyproject description + action/README.md counts == live registry."""
+    """pyproject / action / ci README + SPEC.md counts == live registry."""
 
     def _assert_counts_live(self, text, label):
         claims = [int(n) for n in N_BUSINESS_RULES_RE.findall(text)]
@@ -592,6 +605,47 @@ class InstallSurfaceRuleCountBound(unittest.TestCase):
                 "state the live engine scope instead (see "
                 "action/README.md's Honest scope)" % stale)
 
+    def test_spec_count_is_live(self):
+        self._assert_counts_live(_read(SPEC_MD), "SPEC.md")
+
+    def test_spec_has_no_retired_scope_denials(self):
+        # The exact fabricated denials SPEC.md §6 carried before T-VHCLAIM.2.
+        # They were DELETED, not softened — a doc that reintroduces either one
+        # fails here rather than telling an evaluator that ~180 core rules and
+        # the whole BR-CL-* family are missing when the engine asserts them.
+        text = _read(SPEC_MD)
+        for stale in ("180 further", "only BR-CL-01 chosen",
+                      "only UNTDID 1001"):
+            self.assertNotIn(
+                stale, text,
+                "SPEC.md reintroduced the retired denial %r — state the live "
+                "engine scope instead (COVERAGE.md is the inventory; "
+                "gen_coverage.CODELIST_NOT_ASSERTED is the deferred-codelist "
+                "table and it is empty)" % stale)
+
+    def test_spec_keeps_its_genuine_limits(self):
+        # Deleting the false denials must never cost the TRUE ones. Each
+        # needle below was re-verified against the tree: no XSD layer runs,
+        # the four CEN tautologies can never fire, the rounding model is a
+        # reproduction of the artifact's own idiom with no configurable
+        # tolerance, and signatures / attachment payloads / PDF/A-3
+        # conformance are genuinely not checked.
+        text = _read(SPEC_MD)
+        for needle, what in (
+                ("no XSD structural validation is performed",
+                 "the no-XSD limit"),
+                ('`test="true()"` tautologies',
+                 "the BR-CO-05..08 never-provable exclusion"),
+                ("BR-CO-08", "the tautology ids"),
+                ("Calculation tolerance / rounding",
+                 "the rounding/tolerance limit"),
+                ("XML signatures: out of scope",
+                 "the no-signature-verification limit"),
+                ("never decoded", "the attachment-payload limit"),
+                ("not a PDF/A-3 conformance", "the PDF/A-3 limit")):
+            self.assertIn(needle, text,
+                          "SPEC.md lost %s (%r)" % (what, needle))
+
     def test_ci_readme_keeps_its_genuine_limits(self):
         # Removing the understatement must never cost the real limits: the
         # three statements below are TRUE and are the only thing standing
@@ -627,7 +681,8 @@ class InstallSurfaceRuleCountBound(unittest.TestCase):
         live = str(len(fireable()))
         for path, label in ((PYPROJECT, "pyproject.toml"),
                             (ACTION_README, "action/README.md"),
-                            (CI_README, "ci/README.md")):
+                            (CI_README, "ci/README.md"),
+                            (SPEC_MD, "SPEC.md")):
             text = _read(path)
             self.assertIn(live, text,
                           "%s no longer carries the literal live count %s"

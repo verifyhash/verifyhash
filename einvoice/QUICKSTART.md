@@ -498,8 +498,11 @@ Honest limits worth knowing before you wire this into CI:
   `validate`'s default text or `--json` output, which reports the invoice
   verdict. If you care about wrapper conformance, use the report surface.
 
-`python3 -m einvoice.report <invoice.pdf>` still works exactly as before and is
-still the only place `--baseline`, `--pretty` and `--recurse` live.
+`python3 -m einvoice.report <invoice.pdf>` still works exactly as before, and
+`--pretty` and `--recurse` still live only there. `--baseline` no longer does:
+`einvoice validate --baseline prev.json invoice.xml` runs the same regression
+diff, because the console script delegates to this module's diff code rather
+than reimplementing it.
 
 ## 5. Machine-readable: `--json`
 
@@ -606,9 +609,14 @@ Three honest limits, all measured:
   swapped the displayed summary string — exactly as both behave with `--json`.
 
 The sibling `python3 -m einvoice.report --format <fmt> <invoice.xml>` entry point
-still exists and still works; it remains the only place `--baseline` (fail only
-on a *new* fatal vs a stored baseline), `--pretty`, `--recurse` and the
-Factur-X/ZUGFeRD PDF route live. For the seven delegated formats both surfaces
+still exists and still works; `--pretty` (indented JSON) and `--recurse` (an
+explicit directory walk — the console script spells that `validate-batch`) still
+live only there. Two things that were once exclusive to it no longer are: the
+Factur-X/ZUGFeRD PDF route (`einvoice validate invoice.pdf` extracts and grades
+the embedded XML itself) and `--baseline` — `einvoice validate --baseline
+prev.json invoice.xml` fails only on a *new* fatal versus a stored report and
+delegates to the same diff code, so both surfaces emit the identical
+`einvoice-conformance-diff/v1` document. For the seven delegated formats both surfaces
 call the same emitter, so those bodies are byte-identical for the same invoice
 and profile (measured). The two `json` documents and the two `text` summaries are
 *not* interchangeable — each surface keeps its own long-standing shape, and

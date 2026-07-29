@@ -340,8 +340,11 @@ fixed-seed fuzz corpus of mangled containers):
   attachment rather than the wrapper. A non-PDF, non-XML file is unaffected and
   keeps its existing wrong-file-type hint.
 - **`python3 -m einvoice.report <file.pdf>`** remains fully supported and is
-  still the only place `--baseline` / `--pretty` / `--recurse` live; it is no
-  longer the *only* route to a container.
+  still the only place `--pretty` / `--recurse` live; it is no longer the
+  *only* route to a container, and no longer the only home of `--baseline`
+  either — `einvoice validate --baseline prev.json invoice.xml` delegates to
+  the same diff code and keeps the same exit rule (`1` only on a *new* fatal,
+  `0` when only pre-existing fatals remain).
 - **`validate-batch`**: unchanged, as already documented in the table above —
   an unsupported container is an *errored* file, and the batch returns `3`
   only when some file **only** errored and no file had a fatal (a fatal

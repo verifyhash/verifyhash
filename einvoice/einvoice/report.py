@@ -2901,6 +2901,12 @@ def main(argv=None):
         sys.stdout.write(block)
         return EXIT_OK
 
+    # DECLARED DIVERGENCE, not an oversight: this refusal is row "lang" of
+    # ``einvoice.cli.ENTRY_POINT_CAPABILITIES``, the one place that says which
+    # flags each entry point takes and why the asymmetric ones are asymmetric.
+    # The wording below is pinned (test_lang.py, test_entry_point_matrix.py) —
+    # a language flag silently swallowed by a machine-facing document is how a
+    # user comes to believe a translation happened.
     if saw_lang:
         sys.stderr.write(
             "error: --lang applies only to --explain; a report document is "

@@ -286,7 +286,8 @@ PROG = "einvoice"
 USAGE = ("usage: %(p)s validate <invoice.xml|invoice.pdf|-> "
          "[--json] [--format=<fmt>] [--quiet] "
          "[--profile=en16931|xrechnung] [--lang=en|de] "
-         "[--fail-on=fatal|warning|information]\n"
+         "[--fail-on=fatal|warning|information] "
+         "[--baseline=<prev-report.json>]\n"
          "       %(p)s validate-batch <dir|glob> "
          "[--json] [--format=<fmt>] [--quiet] [--profile=en16931|xrechnung] "
          "[--lang=en|de] [--fail-on=fatal|warning|information]\n"
@@ -389,6 +390,173 @@ OUTPUT_FORMATS = ("text", "json")
 #: unreachable from the ONE binary a ``pip install`` puts on an adopter's PATH.
 DELEGATED_FORMATS = tuple(sorted(set(REPORT_FORMATS) - set(OUTPUT_FORMATS)))
 
+
+# --------------------------------------------------------------------------- #
+# ENTRY-POINT CAPABILITY MATRIX (T-VHGATE.1)
+# --------------------------------------------------------------------------- #
+#: The two command-line entry points this wheel installs. ``einvoice`` is the
+#: console script on an adopter's PATH (this module); ``einvoice.report`` is the
+#: sibling module surface (``python3 -m einvoice.report``, :mod:`einvoice.report`).
+ENTRY_POINTS = ("einvoice", "einvoice.report")
+
+#: WHY THIS EXISTS. The two entry points have always accepted DIFFERENT flag
+#: sets, and until now that difference was an accident of two hand-rolled argv
+#: loops rather than a decision anyone had written down. The measured cost
+#: (2026-07-29): the flag that converts a cautious ERP evaluator — a regression
+#: gate that fails only on a NEW fatal — was reachable only as
+#: ``python3 -m einvoice.report --baseline ...``; typing it on the command the
+#: docs actually teach answered ``error: unexpected argument`` (exit 2), and
+#: ``einvoice --help`` did not mention it once. Nobody had decided that; it was
+#: simply never noticed.
+#:
+#: So every long option either entry point accepts now has a row here saying
+#: WHICH entry points accept it and WHY the asymmetric ones are asymmetric.
+#: ``test_entry_point_matrix.py`` DERIVES the real per-entry-point flag sets from
+#: the two parsers' own acceptance expressions and fails if a flag is accepted by
+#: one surface, absent from the other, and has no row — so the next divergence
+#: has to be argued for in this table instead of discovered by a user.
+#:
+#: Keys are long-option names WITHOUT the leading dashes on purpose: a source
+#: literal of the dashed form in this file would be indistinguishable from a
+#: parser dispatch literal to ``test_cli_docs_parity.dispatch_flags_from_source``,
+#: which scans this module for exactly that shape. A declaration must not be
+#: mistaken for an implementation.
+#:
+#: ``accepted_by`` is the PARSER-level truth (the flag is consumed, not left as a
+#: stray positional). A flag can be parsed by both and still be refused for a
+#: particular MODE of one of them — that is what ``why`` is for.
+ENTRY_POINT_CAPABILITIES = {
+    "baseline": {
+        "accepted_by": ("einvoice", "einvoice.report"),
+        "why": (
+            "Both, since T-VHGATE.1. On the console script it is restricted to "
+            "the validate subcommand and DELEGATES to einvoice.report's diff "
+            "code path (load_baseline / build_diff) — one implementation, one "
+            "einvoice-conformance-diff/v1 document, one exit rule (1 only on a "
+            "NEW fatal; pre-existing fatals exit 0). It is refused on "
+            "validate-batch / receipt / info because a diff compares ONE "
+            "invoice against ONE stored report, exactly as a delegated "
+            "--format is refused outside the validating subcommands."),
+    },
+    "explain": {
+        "accepted_by": ("einvoice", "einvoice.report"),
+        "why": ("Both; the console script delegates a normalised argv to "
+                "einvoice.report so one catalog renderer serves both."),
+    },
+    "format": {
+        "accepted_by": ("einvoice", "einvoice.report"),
+        "why": ("Both, over the same REPORT_FORMATS registry. The seven "
+                "delegated bodies are rendered by einvoice.report's emitters "
+                "on both surfaces, so they are byte-identical."),
+    },
+    "profile": {
+        "accepted_by": ("einvoice", "einvoice.report"),
+        "why": ("Both. Deliberate divergence in the DEFAULT only: the console "
+                "script defaults to en16931, einvoice.report to xrechnung. "
+                "That default is load-bearing for both surfaces' published "
+                "output and is documented rather than silently reconciled."),
+    },
+    "help": {
+        "accepted_by": ("einvoice", "einvoice.report"),
+        "why": ("Both, and deliberately not shared text: each prints its OWN "
+                "synopsis to stdout and exits 0, because each accepts a "
+                "different flag set — that is what this table records."),
+    },
+    "lang": {
+        "accepted_by": ("einvoice", "einvoice.report"),
+        "why": (
+            "Parsed by both, but einvoice.report ACCEPTS it only for its "
+            "--explain catalog lookup and refuses it for every report mode "
+            "with a reasoned message ('a report document is machine-facing "
+            "and language-neutral'). That refusal is correct and is pinned "
+            "verbatim: a language flag that a machine-facing document "
+            "silently swallows is how a user comes to believe a translation "
+            "happened. The console script applies it to the HUMAN summary, "
+            "which is the only thing there is to translate. For the same "
+            "reason it is refused alongside --baseline on the console "
+            "script: a diff document has no human summary."),
+    },
+    "json": {
+        "accepted_by": ("einvoice",),
+        "why": (
+            "Console script only, and only as the historical exact alias for "
+            "the json output form. On einvoice.report the output IS a "
+            "document and json is already its default, so a second spelling "
+            "would buy nothing and give one command two names for one thing."),
+    },
+    "quiet": {
+        "accepted_by": ("einvoice",),
+        "why": (
+            "Console script only. It silences the HUMAN validate summary; "
+            "einvoice.report emits no human summary, so there is nothing for "
+            "it to silence. (It is already a no-op on the console script's "
+            "own machine forms, for the same reason.)"),
+    },
+    "fail-on": {
+        "accepted_by": ("einvoice",),
+        "why": (
+            "Console script only. It is a threshold over a VERDICT, and the "
+            "console script is the surface that owns the verdict-to-exit-code "
+            "mapping. einvoice.report's exit codes are per-document-mode "
+            "contracts published in the report-schema and CI-recipe "
+            "documentation (including the diff's new-fatal-only rule); a "
+            "threshold flag there would silently redefine a shipped CI "
+            "contract, so the threshold stays on the command that owns it. "
+            "For the same reason an EXPLICIT threshold is refused alongside "
+            "--baseline: the diff's exit rule is the diff's own, and a "
+            "threshold that quietly did nothing would be worse than an "
+            "error."),
+    },
+    "verify": {
+        "accepted_by": ("einvoice",),
+        "why": (
+            "Console script only. It re-hashes a conformance RECEIPT, and "
+            "receipts are a console-script subcommand; einvoice.report has no "
+            "receipt surface to verify against."),
+    },
+    "show-config": {
+        "accepted_by": ("einvoice",),
+        "why": (
+            "Console script only, because the config layer itself is console "
+            "script only: einvoice.report reads no .einvoice.toml and no "
+            "[tool.einvoice] table (verified — it never imports "
+            "einvoice.config), so it has no resolved settings to report and a "
+            "flag there would print a fiction."),
+    },
+    "version": {
+        "accepted_by": ("einvoice",),
+        "why": (
+            "Console script only. Stated honestly rather than dressed up: "
+            "this is a ROUGH EDGE, not a principled refusal — "
+            "python3 -m einvoice.report treats the token as a file path and "
+            "answers 'no such file'. It is declared here so it is a known "
+            "gap instead of a surprise; the question it answers ('which wheel "
+            "is on my PATH') is a console-script question, and "
+            "'einvoice info --json' answers it in full for both surfaces."),
+    },
+    "pretty": {
+        "accepted_by": ("einvoice.report",),
+        "why": (
+            "einvoice.report only, deliberately. The console script's json "
+            "output is a byte-pinned machine contract (test_golden_snapshot, "
+            "test_json_surface_parity); an indentation switch would give one "
+            "command two byte-shapes for the same document, and any consumer "
+            "that wants indentation already has python3 -m json.tool. On "
+            "einvoice.report the emitted artifact is the deliverable, so a "
+            "human-readable spelling of it earns its place."),
+    },
+    "recurse": {
+        "accepted_by": ("einvoice.report",),
+        "why": (
+            "einvoice.report only, deliberately. The console script already "
+            "expresses directory work as its own subcommand, validate-batch "
+            "<dir|glob>, which emits the aggregate "
+            "einvoice-conformance-batch/v1 document. A second spelling of the "
+            "same capability on validate would be two doors into one room, "
+            "which is the class of divergence this table exists to prevent."),
+    },
+}
+
 #: How many non-fatal findings a PASS summary lists inline before it truncates
 #: (T-VHUX2). A conformant invoice normally carries 0-2 advisories, so this cap
 #: is not reached in practice; it exists so a pathological document cannot turn
@@ -410,10 +578,12 @@ _NON_FATAL_LIST_CAP = 10
 #: writes itself, ``DELEGATED_FORMATS`` for the ones it renders through
 #: :mod:`einvoice.report`, and ``BATCH_FORMATS`` for the aggregate-capable subset.
 #: The ``python3 -m einvoice.report`` pointer stays — that entry point is real,
-#: still works, and is the only place ``--baseline`` / ``--pretty`` / ``--recurse``
-#: live — but it is no longer presented as the ONLY route to the CI formats
-#: (T-VHERG.4) nor as the only route to a Factur-X/ZUGFeRD PDF container
-#: (T-VHERG.5), because it is neither. Every reference is a URL, never a repo
+#: still works, and is still the only place ``--pretty`` and ``--recurse`` live —
+#: but it is no longer presented as the ONLY route to the CI formats (T-VHERG.4),
+#: to a Factur-X/ZUGFeRD PDF container (T-VHERG.5) or to a ``--baseline``
+#: regression diff (T-VHGATE.1), because it is none of those. What each entry
+#: point accepts, and why, is declared once in
+#: :data:`ENTRY_POINT_CAPABILITIES`. Every reference is a URL, never a repo
 #: file the wheel does not ship.
 HELP = (
     USAGE + "\n\n"
@@ -448,11 +618,15 @@ HELP = (
     "byte-identical to that module's for the same invoice and profile.\n"
     "validate-batch has an aggregate shape for %s only; the other six\n"
     "describe ONE invoice, so run them per file.\n"
-    "The sibling entry point still works and still owns the flags this one\n"
-    "has never had (baseline diffing, pretty JSON, explicit recursion). It no\n"
+    "The sibling entry point still works and still owns two flags this one\n"
+    "does not have: --pretty (indented JSON) and --recurse (explicit\n"
+    "recursion; this CLI spells directory work 'validate-batch'). It no\n"
     "longer owns the Factur-X/ZUGFeRD PDF-container route: since 0.2.7\n"
     "'einvoice validate invoice.pdf' extracts and grades the embedded XML\n"
-    "itself, with the same extractor and the same rules.\n"
+    "itself, with the same extractor and the same rules. Nor does it own\n"
+    "baseline diffing: 'einvoice validate --baseline prev.json invoice.xml'\n"
+    "runs the same diff and exits 1 only on a NEW fatal (pre-existing fatals\n"
+    "are tolerated, exit 0).\n"
     "  python3 -m einvoice.report --format <fmt> <invoice.xml|invoice.pdf>\n"
     "Careful: it defaults to --profile xrechnung, this CLI to en16931.\n"
     "Full flag set and documentation: https://verifyhash.com/einvoice/\n"
@@ -1270,10 +1444,40 @@ def _main(argv=None):
     # whichever came last. ``None`` after the loop = flag absent, and the config
     # value or the built-in 'text' fills it in.
     format_flags = []
+    # --baseline switches ``validate`` into REGRESSION-DIFF mode: grade the
+    # invoice now, compare against a stored json report, and fail ONLY on a
+    # fatal that was not already there. The work is not done here — it is
+    # DELEGATED to einvoice.report's load_baseline/build_diff at dispatch, the
+    # same way --explain delegates (see :func:`_run_explain`) — so there is
+    # exactly one diff implementation and one einvoice-conformance-diff/v1
+    # document in the wheel. Parsed globally like --profile/--lang, RESTRICTED
+    # to ``validate`` below. See :data:`ENTRY_POINT_CAPABILITIES`.
+    baseline_path = None
+    # Did the USER type --lang / --fail-on on this command line? The resolved
+    # values below always have a value (config or built-in default), so these
+    # two booleans are the only way to tell "asked for" from "defaulted" — and
+    # that distinction is what lets --baseline refuse an EXPLICIT --lang or
+    # --fail-on (neither means anything to a machine-facing diff document)
+    # without breaking a project whose .einvoice.toml happens to set them.
+    saw_lang_flag = False
+    saw_fail_on_flag = False
     rest = []
     i = 0
     while i < len(args):
         a = args[i]
+        if a == "--baseline":
+            if i + 1 >= len(args):
+                sys.stderr.write(
+                    "error: --baseline needs a value: the path of a stored "
+                    "json report to diff against\n" + USAGE + "\n")
+                return EXIT_USAGE
+            baseline_path = args[i + 1]
+            i += 2
+            continue
+        if a.startswith("--baseline="):
+            baseline_path = a.split("=", 1)[1]
+            i += 1
+            continue
         if a == "--format":
             if i + 1 >= len(args):
                 sys.stderr.write(
@@ -1293,10 +1497,12 @@ def _main(argv=None):
                     "error: --fail-on needs a value\n" + USAGE + "\n")
                 return EXIT_USAGE
             fail_on = args[i + 1]
+            saw_fail_on_flag = True
             i += 2
             continue
         if a.startswith("--fail-on="):
             fail_on = a.split("=", 1)[1]
+            saw_fail_on_flag = True
             i += 1
             continue
         if a == "--profile":
@@ -1315,10 +1521,12 @@ def _main(argv=None):
                 sys.stderr.write("error: --lang needs a value\n" + USAGE + "\n")
                 return EXIT_USAGE
             lang = args[i + 1]
+            saw_lang_flag = True
             i += 2
             continue
         if a.startswith("--lang="):
             lang = a.split("=", 1)[1]
+            saw_lang_flag = True
             i += 1
             continue
         rest.append(a)
@@ -1437,6 +1645,41 @@ def _main(argv=None):
         sys.stderr.write(
             "error: --format %s emits a conformance report and is only valid "
             "for validate / validate-batch\n%s\n" % (fmt, USAGE))
+        return EXIT_USAGE
+
+    # ``--baseline`` is the SAME discipline one notch narrower: a regression
+    # diff compares ONE invoice against ONE stored report, so it means
+    # something only on ``validate``. ``validate-batch`` grades many files into
+    # an aggregate document with no single baseline to diff, and ``receipt`` /
+    # ``info`` produce no conformance findings at all. Say so at EXIT_USAGE in
+    # the voice the DELEGATED_FORMATS refusal above already uses — one error
+    # dialect, not two — instead of silently ignoring the flag.
+    if baseline_path is not None and not (args and args[0] == "validate"):
+        sys.stderr.write(
+            "error: --baseline diffs one invoice against one stored report "
+            "and is only valid for validate\n%s\n" % USAGE)
+        return EXIT_USAGE
+
+    # Flags that mean nothing to a machine-facing diff document are REFUSED,
+    # never swallowed (:data:`ENTRY_POINT_CAPABILITIES`). Only an EXPLICIT flag
+    # is refused: a project whose .einvoice.toml sets lang/fail-on for its
+    # ordinary runs must not be locked out of --baseline by its own config.
+    #   * --lang translates the HUMAN summary; a diff document has none. This
+    #     is the console-script half of the reasoning einvoice.report already
+    #     applies to --lang on a report document.
+    #   * --fail-on is a threshold over a verdict; the diff's exit rule is its
+    #     own (1 only on a NEW fatal), so a threshold here would do nothing.
+    if baseline_path is not None and saw_lang_flag:
+        sys.stderr.write(
+            "error: --lang applies to the human summary; a --baseline diff is "
+            "a machine-facing document and language-neutral (drop --lang, or "
+            "drop --baseline for a German summary)\n%s\n" % USAGE)
+        return EXIT_USAGE
+    if baseline_path is not None and saw_fail_on_flag:
+        sys.stderr.write(
+            "error: --fail-on does not apply to a --baseline diff: the diff "
+            "has its own exit rule (1 only on a NEW fatal, 0 when only "
+            "pre-existing fatals remain)\n%s\n" % USAGE)
         return EXIT_USAGE
 
     # ``info`` is a read-only build introspection: no input file, no
@@ -1592,6 +1835,35 @@ def _main(argv=None):
         # here. (Until T-VHERG.5 a PDF was excluded from this branch to keep it
         # on the old XML-only exit-3 row; that exclusion is gone with the
         # single-file refusal it existed to protect.)
+        # ``validate --baseline <prev-report.json>`` is REGRESSION-DIFF mode.
+        # Dispatched here, ahead of the delegated-format branch, so that an
+        # incompatible ``--format`` reaches einvoice.report's OWN refusal
+        # (report.py rejects --baseline with every non-json form) instead of
+        # being answered twice in two dialects.
+        #
+        # ONE IMPLEMENTATION. Nothing about the diff is computed here: no
+        # load_baseline, no _multiset_diff, no build_diff, no exit-code
+        # arithmetic. A NORMALISED argv goes to ``einvoice.report``'s own
+        # main() — the identical delegation shape :func:`_run_explain` uses —
+        # so the console script and ``python3 -m einvoice.report`` emit the
+        # same einvoice-conformance-diff/v1 bytes and obey the same exit
+        # contract (0 when only pre-existing fatals remain, 1 on a NEW fatal,
+        # 3 when the current invoice cannot be parsed) by construction rather
+        # than by two implementations agreeing.
+        #
+        # ``--profile`` is always passed: the two entry points have different
+        # profile DEFAULTS (en16931 here, xrechnung there), so an omitted
+        # profile would silently regrade the invoice. ``--format`` is passed
+        # only when the user actually typed one; otherwise report's own
+        # default (json) applies, which is the only form a diff has.
+        if baseline_path is not None:
+            from .report import main as _report_main
+            report_argv = ["--baseline", baseline_path, "--profile", profile]
+            if format_flag is not None:
+                report_argv += ["--format", format_flag]
+            report_argv.append(path)
+            return _report_main(report_argv)
+
         if fmt in DELEGATED_FORMATS:
             return _run_validate_format(path, display_path, fmt, profile,
                                         fail_on)

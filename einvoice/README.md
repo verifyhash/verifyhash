@@ -1055,9 +1055,14 @@ summaries are *not* interchangeable: each surface keeps its own long-standing
 shape (`einvoice validate --json` is the CLI result object; `einvoice.report`
 emits the versioned `einvoice-conformance-report/v1` document), and `--format`
 deliberately changes neither. Reach for
-`python3 -m einvoice.report` when you want what only it offers: `--baseline`
-(fail on a *new* fatal versus a stored baseline), `--pretty`, `--recurse`, and
-the PDF-container dispatch that extracts the XML from a Factur-X/ZUGFeRD file.
+`python3 -m einvoice.report` when you want what only it offers: `--pretty`
+(indented JSON) and `--recurse` (an explicit directory walk; the console script
+spells that `validate-batch`). Two capabilities this list used to name have
+since moved onto the console script and are no longer reasons to leave it: the
+PDF-container dispatch that extracts the XML from a Factur-X/ZUGFeRD file, and
+`--baseline` — `einvoice validate --baseline prev.json invoice.xml` fails on a
+*new* fatal versus a stored report, delegating to this module's diff so both
+entry points emit the same `einvoice-conformance-diff/v1` document.
 Mind the one deliberate difference: this module defaults to `--profile
 xrechnung`, the console script to `en16931`.
 

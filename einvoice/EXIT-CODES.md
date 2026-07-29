@@ -256,7 +256,7 @@ matters is which one each outcome lands on:
 |------|-----------------------------|--------|
 | `0` | Zero **new** fatal violations versus the baseline. Fatals that were already in the baseline are tolerated — that is the whole point of the flag — and `resolved_violations` records the ones you fixed. | stdout: the complete diff document. Nothing on stderr. |
 | `1` | At least one **new** fatal violation, i.e. a real regression against the captured baseline. | stdout: the complete diff document, including the `new_violations` array naming each rule id — a failing run still produces the artifact. |
-| `2` | Usage error — the **baseline file itself** could not be used, so no diff was computed and the verdict says nothing about your invoice. Four cases, each with one actionable `error:` line: the path **does not exist / cannot be read** (`error: cannot read baseline <path>: No such file or directory`, or `Permission denied`); the file **is not valid JSON** (`error: baseline <path> is not valid JSON: <parser detail>`); the path **is a directory** (`error: cannot read baseline <path>: Is a directory`); or the file is valid JSON but **is not a conformance report** (no `violations` array, or a malformed violation record). Also `--baseline` combined with an **incompatible `--format`** — a diff has only a JSON form, so `--format sarif/junit/gitlab/github/azure/html/badge/text` with `--baseline` is refused (`error: --baseline emits a diff document and is not compatible with --format <fmt>`). | stderr: one `error:` line plus **this** command's `usage:` banner. stdout stays completely empty — no half-written diff can reach a parser. |
+| `2` | Usage error — the **baseline file itself** could not be used, so no diff was computed and the verdict says nothing about your invoice. Five cases, each with one actionable `error:` line: the path **does not exist / cannot be read** (`error: cannot read baseline <path>: No such file or directory`, or `Permission denied`); the file **is not valid JSON** (`error: baseline <path> is not valid JSON: <parser detail>`); the path **is a directory** (`error: cannot read baseline <path>: Is a directory`); the file is valid JSON but **is not a conformance report** (no `violations` array, or a malformed violation record); or the baseline **declares a different `profile`** than the run gates with (`error: baseline <path> was captured under profile 'en16931' but this run validates with profile 'xrechnung'; those are different rule sets, …`) — the two profiles are different rule sets, so that diff would grade a flag change as a regression. Also `--baseline` combined with an **incompatible `--format`** — a diff has only a JSON form, so `--format sarif/junit/gitlab/github/azure/html/badge/text` with `--baseline` is refused (`error: --baseline emits a diff document and is not compatible with --format <fmt>`). | stderr: one `error:` line plus **this** command's `usage:` banner. stdout stays completely empty — no half-written diff can reach a parser. |
 | `3` | The **current** invoice could not be parsed (not-well-formed XML / unsupported container), so there was nothing to diff. | stdout: the diff document carrying `"error": "not-well-formed"`. |
 
 Scope and invariants:
@@ -278,13 +278,30 @@ Scope and invariants:
   `usage: einvoice validate …`, never the sibling module's usage line — which
   advertises `--pretty` and `--recurse`, two flags `einvoice validate` does not
   accept.
-- **The diff document is unchanged**, byte for byte, in all three validation
-  outcomes; it is golden-pinned by `test_golden_snapshot.py` and exercised on
-  both surfaces by `test_report_diff.py`.
-- `--profile` is passed through to the diff explicitly, because the two entry
-  points default differently (`en16931` here, `xrechnung` there). Capture the
-  baseline with the **same** `--profile` you gate with, or the diff will report
-  a rule-set change as a regression.
+- **The diff document gained exactly one field**, `baseline_profile`, and is
+  otherwise unchanged byte for byte in all three validation outcomes. The new
+  key is **additive on the same `einvoice-conformance-diff/v1` id** (no schema
+  bump — the same rule REPORT-SCHEMA.md applied when `element` was added to the
+  report `v1` id) and it appears **only** when the baseline declares a
+  `profile`; a baseline that declares none emits the historical document
+  verbatim. Golden-pinned by `test_golden_snapshot.py` and exercised on both
+  surfaces by `test_report_diff.py`.
+- **The baseline's profile is enforced, not assumed.** `--profile` is passed
+  through to the diff explicitly, because the two entry points default
+  differently (`en16931` here, `xrechnung` there) — and `xrechnung` is
+  `en16931` *plus* the BR-DE-\* layer, so a cross-profile diff reports every
+  rule that exists in only one of the two as a change in your invoice when
+  nothing about the invoice moved. Since T-VHGATE.7 (2026-07-29) the diff
+  therefore **refuses** (exit `2`, nothing on stdout) when the baseline
+  declares a `profile` that differs from the one the run resolved, naming both.
+  When they match, the baseline's profile is recorded in the diff document as
+  `baseline_profile`. A baseline that declares **no** `profile` — the shape
+  `einvoice validate --json` writes, and every baseline captured before this
+  change — still diffs exactly as it always did, but prints one `note:` line on
+  stderr saying the profile could not be checked and naming the profile the run
+  used, so silence never means "checked". To get the check rather than the
+  note, capture with `python3 -m einvoice.report --profile <p> --format json`,
+  which records `profile` in the report it writes.
 - `--lang` and `--fail-on` are refused with `--baseline` (exit `2`): the diff is
   a machine document with no human summary to translate, and its threshold is
   fixed at "a new fatal".

@@ -36,10 +36,23 @@
 #   2  gate misconfigured (no validator, no input files, bad usage/profile)
 #
 # Adoption on-ramp: to gate only on NEW regressions vs a captured baseline
-# (tolerating a pre-existing backlog) use the report entrypoint's `--baseline`
-# mode directly instead of this hard gate — see ci/README.md and T-VH.22:
-#   python3 -m einvoice.report --format json invoice.xml > baseline.json
-#   python3 -m einvoice.report --baseline baseline.json invoice.xml
+# (tolerating a pre-existing backlog) drive `einvoice validate --baseline`
+# per invoice instead of this hard gate — see ci/README.md and T-VH.22:
+#   einvoice validate --profile xrechnung --json invoice.xml > baseline.json
+#   einvoice validate --profile xrechnung --baseline baseline.json invoice.xml
+# (--baseline exits 1 only on a new fatal; pre-existing fatals are tolerated.)
+# Run the FIRST line once and commit baseline.json; only the second belongs in
+# CI. The capture exits 1 when the invoice already has fatals — that is the
+# backlog you are baselining, not an error.
+# Pass the SAME --profile on both lines, and match $PROFILE below (xrechnung by
+# default, EINVOICE_PROFILE to override): xrechnung is en16931 plus the BR-DE-*
+# layer, so a cross-profile diff scores a flag change as a regression. Since
+# 2026-07-29 that is refused outright (exit 2) whenever the baseline records the
+# profile it was captured under. A baseline written by `einvoice validate
+# --json` does NOT record one yet, so the gate instead prints one `note:` line
+# on stderr each run saying the profile could not be checked — expect it; it is
+# not a failure. Capture with `python3 -m einvoice.report --profile xrechnung
+# --format json` for the hard check instead of the note.
 
 set -u
 

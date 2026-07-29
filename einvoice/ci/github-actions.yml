@@ -65,8 +65,22 @@ jobs:
 
 # Adoption on-ramp (T-VH.22): if you are switching this on over a pipeline that
 # ALREADY has known violations, gate only on NEW regressions instead of every
-# fatal — capture a baseline once and diff against it. Replace the gate step's
-# run: with, per invoice:
-#   python3 -m einvoice.report --format json invoices/x.xml > baseline.json
-#   python3 -m einvoice.report --baseline baseline.json invoices/x.xml
+# fatal — drive `einvoice validate --baseline` against a baseline you captured
+# once. Replace the gate step's run: with, per invoice:
+#   einvoice validate --profile xrechnung --json invoices/x.xml > baseline.json
+#   einvoice validate --profile xrechnung --baseline baseline.json invoices/x.xml
 # (--baseline exits 1 only on a new fatal; pre-existing fatals are tolerated.)
+# Run the FIRST line once on your machine and commit baseline.json; only the
+# second line belongs in the pipeline. The capture itself exits 1 when the
+# corpus already has fatals — that is the backlog you are baselining, not an
+# error, so do not let `set -e` eat it.
+# Pass the SAME --profile on both lines. They must match EINVOICE_PROFILE above:
+# xrechnung is en16931 plus the BR-DE-* layer, so a cross-profile diff scores
+# your flag change as a regression. Since 2026-07-29 that is refused outright
+# (exit 2, nothing on stdout) whenever the baseline records which profile it was
+# captured under. A baseline written by `einvoice validate --json` does NOT
+# record one yet, so the gate above instead prints one `note:` line on stderr
+# each run saying the profile could not be checked — expect that line, and do
+# not treat it as a failure. Capture with
+# `python3 -m einvoice.report --profile xrechnung --format json` if you want the
+# hard check rather than the note.

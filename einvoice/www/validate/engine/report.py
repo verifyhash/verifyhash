@@ -47,6 +47,8 @@ NO rule logic — it only set-diffs the two projections. The document carries:
     source                   the current invoice path
     baseline / baseline_source  the baseline file path, and the ``source``
                              recorded inside the baseline report
+    baseline_profile         (additive, only when the baseline DECLARES a
+                             ``profile``) the profile it was captured under
     new_violations           records present NOW but absent in the baseline
     resolved_violations      records present in the baseline but absent NOW
     new_count / resolved_count / unchanged_count
@@ -62,7 +64,14 @@ pre-existing failure does NOT break the build, only a regression does):
         the diff document with an ``error`` field, as in plain mode
 
 A malformed / unreadable / wrong-shape baseline file is reported with a clear
-stderr message and a nonzero exit — never a traceback.
+stderr message and a nonzero exit — never a traceback. So is a baseline that
+DECLARES a ``profile`` different from the one this run validates with: the two
+profiles are different rule sets (``xrechnung`` is ``en16931`` plus the BR-DE-*
+layer), so diffing across them scores a flag change as a regression. That is
+refused before any diff is computed (see :func:`check_baseline_profile`). A
+baseline declaring no ``profile`` at all — the shape ``einvoice validate
+--json`` writes — still diffs unchanged, with one ``note:`` line on stderr
+saying the profile could not be checked.
 
 Standard library only. No network.
 """
@@ -1108,6 +1117,63 @@ def load_baseline(baseline_path):
     return data
 
 
+#: Emitted on stderr (ONE line) when a loaded baseline declares no ``profile``
+#: — the shape ``einvoice validate --json`` has always produced, and every
+#: baseline captured before the check below existed. The diff still runs and
+#: the document is unchanged; what this line buys is that SILENCE never means
+#: "checked". ``%s`` args: the baseline path, then the profile the run used.
+BASELINE_PROFILE_UNCHECKED = (
+    "note: baseline %s declares no 'profile', so it could not be checked "
+    "against the profile this run validates with (%s) — a baseline captured "
+    "under a different --profile diffs two different rule sets\n")
+
+
+def declared_baseline_profile(baseline):
+    """The profile a loaded baseline DECLARES, or ``None`` if it declares none.
+
+    ``python3 -m einvoice.report --format json`` records ``profile`` in every
+    report it writes; the console script's ``einvoice validate --json`` shape
+    historically does not. A non-string or empty value counts as "undeclared"
+    rather than as a mismatch — an unrecognisable field is not evidence that
+    the baseline came from a different rule set.
+    """
+    declared = baseline.get("profile")
+    return declared if isinstance(declared, str) and declared else None
+
+
+def check_baseline_profile(baseline, profile, baseline_path):
+    """Enforce the precondition a baseline diff has always silently assumed:
+    the baseline was captured under the SAME ``--profile`` the run gates with.
+
+    The two profiles are different RULE SETS (``xrechnung`` is ``en16931``
+    plus the BR-DE-* layer), so diffing across them reports every rule that
+    exists in only one of them as a change in the invoice. It is not — the
+    operator changed a flag. MEASURED (2026-07-29, T-VHGATE.7): an ``en16931``
+    baseline gated with ``--profile xrechnung`` produced ``new_violations``
+    naming ``BR-DE-2`` and friends and a red build, on an invoice byte for
+    byte unchanged.
+
+    :returns: the declared profile when the baseline declares one and it
+        matches ``profile`` (so callers can record it as ``baseline_profile``),
+        or ``None`` when the baseline declares none — the legacy shape, which
+        still diffs, uncheckably (see :data:`BASELINE_PROFILE_UNCHECKED`).
+    :raises BaselineError: naming BOTH profiles, when the baseline declares a
+        profile that differs. Raised through the SAME exception the four other
+        baseline refusals use, so it reaches the user in the same voice, on
+        the same stream, and — on the ``einvoice validate`` console script —
+        through the same "no document written" seam that makes it exit 2.
+    """
+    declared = declared_baseline_profile(baseline)
+    if declared is not None and declared != profile:
+        raise BaselineError(
+            "baseline %s was captured under profile %r but this run validates "
+            "with profile %r; those are different rule sets, so the diff would "
+            "grade a flag change as a regression — re-capture the baseline "
+            "with --profile %s, or gate with --profile %s"
+            % (baseline_path, declared, profile, profile, declared))
+    return declared
+
+
 def _multiset_diff(current_records, baseline_records):
     """Multiset diff of two violation-record lists by :data:`DIFF_KEY`.
 
@@ -1171,6 +1237,14 @@ def build_diff(path, baseline, profile="xrechnung", baseline_path=None):
         "baseline_source": baseline_source,
         "profile": profile,
     }
+    # ADDITIVE on the same einvoice-conformance-diff/v1 id (exactly the way
+    # `element` was added to the report v1 id — REPORT-SCHEMA.md): present only
+    # when the baseline declares its profile, so a legacy baseline's document
+    # stays byte-identical. A DIFFERING declared profile never reaches here —
+    # check_baseline_profile refuses it before any diff is computed.
+    declared = declared_baseline_profile(baseline)
+    if declared is not None:
+        head["baseline_profile"] = declared
 
     if current.get("error"):
         # Not-well-formed current invoice: no meaningful diff; report the error.
@@ -1223,6 +1297,11 @@ REPORT_DIFF_SCHEMA = {
         "baseline": "the --baseline file path supplied on the CLI (or null).",
         "baseline_source": "the 'source' field recorded inside the baseline.",
         "profile": "validation profile used: 'en16931' or 'xrechnung'.",
+        "baseline_profile": "present ONLY when the baseline document declares "
+                            "a 'profile': the profile the baseline was "
+                            "captured under. Always equal to 'profile' — a "
+                            "baseline declaring a different one is refused "
+                            "before any diff is computed.",
         "new_violations": "records present NOW but absent in the baseline "
                           "(matched by rule+field+message+severity).",
         "resolved_violations": "records present in the baseline but absent NOW.",
@@ -2975,9 +3054,15 @@ def main(argv=None):
     if baseline_path is not None:
         try:
             baseline = load_baseline(baseline_path)
+            declared = check_baseline_profile(baseline, profile, baseline_path)
         except BaselineError as exc:
             sys.stderr.write("error: %s\n" % exc)
             return EXIT_FAIL
+        if declared is None:
+            # Legacy / undeclared baseline: the diff runs exactly as before,
+            # but the precondition goes on the record instead of being assumed.
+            sys.stderr.write(BASELINE_PROFILE_UNCHECKED % (baseline_path,
+                                                           profile))
         diff = build_diff(path, baseline, profile=profile,
                           baseline_path=baseline_path)
         if pretty:

@@ -484,6 +484,7 @@ own cadence. Programmatic entry points:
 | `baseline`             | string/null | The `--baseline` file path supplied on the CLI. |
 | `baseline_source`      | string/null | The `source` field recorded *inside* the baseline report. |
 | `profile`              | string      | `en16931` or `xrechnung`. |
+| `baseline_profile`     | string      | *(additive, `v1`)* Present **only** when the baseline document itself declares a `profile`. Always equal to `profile`: a baseline declaring a *different* profile is refused before any diff is computed (`einvoice validate --baseline` exits `2`), because the two profiles are different rule sets and the diff would otherwise grade a `--profile` change as a regression. A baseline declaring none diffs as before and the key is absent — one `note:` line on stderr records that the profile could not be checked. |
 | `new_violations`       | list        | Violation records present **now** but absent in the baseline. Same four-key shape as `violations` above. |
 | `resolved_violations`  | list        | Violation records present in the **baseline** but absent now. |
 | `new_count`            | int         | `len(new_violations)`. |

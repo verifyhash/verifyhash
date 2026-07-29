@@ -21,8 +21,9 @@ already referenced by ``test_cli.py``:
 
 ``validate --baseline <prev-report.json>`` (regression-diff mode) is covered on
 both sides of its contract, by the same rule: its VALIDATION outcomes (0 / 1 /
-3) and its USAGE outcomes (2 — an unreadable, non-JSON or directory baseline,
-or an incompatible ``--format``) are all re-derived by driving the real CLI. The
+3) and its USAGE outcomes (2 — an unreadable, non-JSON or directory baseline, a
+baseline captured under a DIFFERENT ``--profile`` than the run gates with, or
+an incompatible ``--format``) are all re-derived by driving the real CLI. The
 diff itself is written and tested in ``test_report_diff.py``; what is pinned
 HERE is only which row of the table above each outcome lands on. Baselines are
 written into a ``tempfile`` from the existing fixtures — still no new committed
@@ -33,6 +34,7 @@ validation, rule, or report code.
 """
 
 import io
+import json
 import os
 import subprocess
 import sys
@@ -244,6 +246,86 @@ class BaselineRegressionDiff(unittest.TestCase):
                 self.assertIn("--baseline", cap.err)
                 self.assertIn("sarif", cap.err)
                 self.assertEqual(cap.out, "")
+
+    def _report_baseline_from(self, fixture, tmpdir, profile,
+                              name="baseline-declared.json"):
+        """Capture a baseline through ``python3 -m einvoice.report --format
+        json`` — the emitter that DOES record ``profile`` in the document —
+        and write it where ``--baseline`` will read it. Driven as a real
+        subprocess, like every other row here; no hand-written shape."""
+        proc = subprocess.run(
+            [sys.executable, "-m", "einvoice.report", "--profile", profile,
+             "--format", "json", fixture],
+            cwd=HERE, capture_output=True)
+        payload = proc.stdout.decode("utf-8")
+        # The whole point of this capture: the document declares its profile.
+        self.assertEqual(json.loads(payload).get("profile"), profile,
+                         proc.stderr)
+        target = os.path.join(tmpdir, name)
+        with open(target, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        return target
+
+    # -- the baseline's own profile is a PRECONDITION, not an assumption ----
+    def test_mismatched_declared_profile_is_usage(self):
+        """MEASURED defect (2026-07-29, T-VHGATE.7): an ``en16931`` baseline
+        gated with ``--profile xrechnung`` scored the whole BR-DE-* layer as
+        ``new_violations`` and exited `1` — a red build blaming an invoice
+        that never changed for what was a flag change. It is a setup error,
+        so it is row `2`, and it names BOTH profiles so the fix is obvious."""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._report_baseline_from(FAIL_FIXTURE, tmp, "en16931")
+            with _Capture(["validate", "--profile", "xrechnung",
+                           "--baseline", base, FAIL_FIXTURE]) as cap:
+                self.assertEqual(cap.rc, EXIT_USAGE, cap.err)
+                # No half-computed verdict can reach a parser.
+                self.assertEqual(cap.out, "")
+                self.assertIn("error: baseline", cap.err)
+                self.assertIn("en16931", cap.err)
+                self.assertIn("xrechnung", cap.err)
+                self.assertIn(base, cap.err)
+                # This entry point's own banner, as with every other row 2.
+                self.assertIn("usage: einvoice validate", cap.err)
+                self.assertNotIn("einvoice.report", cap.err)
+
+    def test_matching_declared_profile_is_recorded_in_the_document(self):
+        """When the baseline declares the SAME profile, nothing is refused and
+        the diff carries it forward as ``baseline_profile`` — additive on the
+        unchanged ``einvoice-conformance-diff/v1`` id."""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._report_baseline_from(FAIL_FIXTURE, tmp, "xrechnung")
+            with _Capture(["validate", "--profile", "xrechnung",
+                           "--baseline", base, FAIL_FIXTURE]) as cap:
+                self.assertEqual(cap.rc, EXIT_OK, cap.err)
+                doc = json.loads(cap.out)
+                self.assertEqual(doc["schema"], "einvoice-conformance-diff/v1")
+                self.assertEqual(doc["baseline_profile"], "xrechnung")
+                self.assertEqual(doc["profile"], "xrechnung")
+                self.assertEqual(doc["new_fatal_count"], 0)
+                # A checked baseline says nothing extra on stderr.
+                self.assertNotIn("could not be checked", cap.err)
+
+    def test_undeclared_profile_still_diffs_but_says_so(self):
+        """The console script's own ``--json`` capture shape declares no
+        ``profile``. That baseline MUST keep working — same exit code, same
+        document body, no new key — but silence must never mean 'checked', so
+        one ``note:`` line on stderr names the profile the run used."""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = self._baseline_from(FAIL_FIXTURE, tmp)
+            with open(base, encoding="utf-8") as fh:
+                self.assertNotIn("profile", json.load(fh))
+            with _Capture(["validate", "--profile", "en16931",
+                           "--baseline", base, FAIL_FIXTURE]) as cap:
+                self.assertEqual(cap.rc, EXIT_OK, cap.err)
+                doc = json.loads(cap.out)
+                self.assertEqual(doc["schema"], "einvoice-conformance-diff/v1")
+                self.assertNotIn("baseline_profile", doc)
+                self.assertEqual(doc["new_fatal_count"], 0)
+                notes = [ln for ln in cap.err.splitlines() if ln.strip()]
+                self.assertEqual(len(notes), 1, cap.err)
+                self.assertTrue(notes[0].startswith("note: baseline"), notes)
+                self.assertIn("en16931", notes[0])
+                self.assertIn(base, notes[0])
 
     # -- the banner belongs to the command the user actually typed ----------
     def test_usage_banner_is_this_entry_points_own(self):

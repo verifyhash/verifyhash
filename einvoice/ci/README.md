@@ -283,20 +283,39 @@ re-implements validation. Bypass in an emergency with `git commit --no-verify`.
 
 A hard gate ("any fatal fails the build") is often too strict to switch on over
 a pipeline that **already** carries known violations. Instead of this gate,
-drive the report entrypoint's baseline diff mode: capture a baseline once, then
-fail the build **only when a new fatal appears**, tolerating the pre-existing
-backlog.
+drive the console script's baseline diff mode — `einvoice validate --baseline` —
+which diffs against a baseline you captured once and fails the build **only when
+a new fatal appears**, tolerating the pre-existing backlog.
 
 ```sh
 # capture a baseline once (commit the JSON):
-python3 -m einvoice.report --format json invoices/x.xml > baseline.json
+einvoice validate --profile xrechnung --json invoices/x.xml > baseline.json
 # then gate every build against it — exit 1 ONLY on a NEW fatal:
-python3 -m einvoice.report --baseline baseline.json invoices/x.xml
+einvoice validate --profile xrechnung --baseline baseline.json invoices/x.xml
 ```
+
+**Pass the same `--profile` on both lines.** `xrechnung` is `en16931` *plus* the
+BR-DE-\* layer, so diffing a baseline captured under one profile against a run
+that gates with the other reports every rule that exists in only one of them as
+a change in your invoice — a red build caused by a flag, on bytes that never
+moved. Since 2026-07-29 that is not a silent misgrade: when the baseline
+document records which profile it was captured under and it differs, the gate
+**refuses** with exit `2`, nothing on stdout, and one `error:` line naming both
+profiles. A baseline that records no profile (which is what
+`einvoice validate --json` writes today, and what every baseline captured before
+that change looks like) still diffs exactly as it always did, but prints one
+`note:` line on stderr saying the profile could **not** be checked — so silence
+never means "checked". Capture with
+`python3 -m einvoice.report --profile <p> --format json` instead if you want the
+hard check rather than the note.
 
 `--baseline` re-validates the current invoice (it adds no rule logic), diffs
 the two violation sets, and exits `0` when there are zero **new** fatals,
-`1` on a regression, `3` on not-well-formed input. It emits its own versioned
-diff document (`einvoice-conformance-diff/v1`); it is **not** compatible with
+`1` on a regression, `3` on not-well-formed input. **`--baseline` exits 1 only
+on a new fatal; pre-existing fatals are tolerated** — that is the whole point.
+The capture line itself exits `1` on a corpus that already has fatals: that is
+the backlog you are baselining, not an error, so run it once by hand rather than
+inside a `set -e` pipeline. `--baseline` emits its own versioned diff document
+(`einvoice-conformance-diff/v1`); it is **not** compatible with
 `--format junit`. See [`../REPORT-SCHEMA.md`](../REPORT-SCHEMA.md) §"Baseline
 diff mode".

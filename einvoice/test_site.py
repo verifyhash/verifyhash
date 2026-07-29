@@ -984,6 +984,55 @@ def main():
                       % (sorted(set(catalog) - set(embedded_ids))[:5],
                          sorted(set(embedded_ids) - set(catalog))[:5]))
 
+        # ---- T-VHWEB.5: forwardable HTML report, from the ENGINE ------------
+        # The download is the engine's OWN build_html() projection of the very
+        # report the page already rendered — never a second, JS-side HTML
+        # renderer (that is the divergence class this lane keeps finding), and
+        # never a second validation run. So: exactly ONE build_report call in
+        # the bridge, and build_html applied to its result.
+        check(val_raw.count("build_report(path, profile=profile)") == 1,
+              "validate page does not call build_report exactly once "
+              "(count=%d) — the engine must run once per validation"
+              % val_raw.count("build_report(path, profile=profile)"))
+        check("_einvoice_report.build_html(_rep)" in val_raw,
+              "validate page does not project the report through the mounted "
+              "engine's build_html()")
+        check("new Blob(" in val_raw and 'type: "text/html"' in val_raw,
+              "validate page does not wrap the report HTML in a text/html "
+              "Blob")
+        check("URL.createObjectURL(" in val_raw and
+              "URL.revokeObjectURL(" in val_raw,
+              "validate page does not mint/revoke an object URL for the "
+              "report download")
+        check("-einvoice-report.html" in val_raw,
+              "report download has no input-derived filename")
+        check("a.download = " in val_raw,
+              "report link carries no download attribute")
+
+        # ---- T-VHWEB.7: position in the findings table ---------------------
+        # BOTH kinds are read off the payload the page already holds, and the
+        # T-VHLOC.4 honesty rule stays visible: an insertion point is where
+        # the missing thing GOES, so it MUST read differently from an error
+        # site and MUST carry the literal word "insertion".
+        check("v.source_line" in val_raw,
+              "findings renderer never reads source_line")
+        check("v.insertion_point_line" in val_raw,
+              "findings renderer never reads insertion_point_line")
+        check('"at line " + v.source_line' in val_raw,
+              "source_line is not rendered with the CLI's "
+              "_position_suffix vocabulary (\"at line N\")")
+        check('"(insertion point line " + v.insertion_point_line' in val_raw,
+              "insertion_point_line is not rendered with the CLI's "
+              "_insertion_point_suffix vocabulary "
+              "(\"(insertion point line N)\")")
+        check("insertion" in val_txt.lower() or "insertion" in val_raw,
+              "validate page never carries the literal word 'insertion'")
+        check("the error is on line" not in val_raw.lower(),
+              "validate page reads an insertion point as an error site")
+        # No :0 / :1 placeholder: the guard is a real 1-based integer test.
+        check("function usableLine(" in val_raw and "value >= 1" in val_raw,
+              "validate page has no 1-based-integer guard for line numbers")
+
         # CLAIMS-DRIFT: the rule-count figure binds to the live registry
         # (same discipline as the compare page).
         live_rules_v = len(_coverage.engine_fireable_ids())

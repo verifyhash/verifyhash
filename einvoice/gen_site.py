@@ -3501,6 +3501,11 @@ _VALIDATE_JS = r"""
   var pyodide = null;
   var validateFn = null;
   var engineVersion = "";
+  // Object URL backing the "download this report" link of the CURRENTLY
+  // rendered result. Held so the previous one can be revoked before a new
+  // one is minted — otherwise every re-validation leaks a whole report
+  // document into the tab for as long as it stays open.
+  var reportUrl = null;
 
   function setStatus(text, cls) {
     statusEl.textContent = text;
@@ -3576,13 +3581,19 @@ _VALIDATE_JS = r"""
       }
       pyodide.FS.writeFile("/engine/einvoice/" + fn, new Uint8Array(buf));
     }
+    // ONE validation run, TWO projections. build_report() is called exactly
+    // once; the HTML the visitor downloads is the engine's OWN build_html()
+    // projection of that same dict — never a second, JS-side renderer, which
+    // is precisely how the CLI and the page would drift apart. The file is
+    // not re-read and the engine is not re-run for the download.
     pyodide.runPython(
       'import sys, json\n' +
       'sys.path.insert(0, "/engine")\n' +
       'from einvoice import report as _einvoice_report\n' +
       'def _browser_validate(path, profile):\n' +
-      '    return json.dumps(\n' +
-      '        _einvoice_report.build_report(path, profile=profile))\n');
+      '    _rep = _einvoice_report.build_report(path, profile=profile)\n' +
+      '    return json.dumps({"report": _rep,\n' +
+      '                       "html": _einvoice_report.build_html(_rep)})\n');
     validateFn = pyodide.globals.get("_browser_validate");
   }
 
@@ -3632,6 +3643,78 @@ _VALIDATE_JS = r"""
     return s === "" ? "" : value;
   }
 
+  // A line number is usable only when it really is a 1-based integer. The
+  // SAME bool/int >= 1 check report.py:_position_suffix applies, restated in
+  // JS terms: `source_line` is frequently ABSENT from the record entirely
+  // (undefined), may be null, and a hand-edited or third-party report could
+  // carry `true`, `0` or "28". Every one of those degrades to "no position".
+  // No placeholder, no :0, no :1 fallback — an invented line number sends the
+  // reader to an innocent element and quietly discredits the tool.
+  function usableLine(value) {
+    return typeof value === "number" && isFinite(value) &&
+           Math.floor(value) === value && value >= 1;
+  }
+
+  // The finding's position, in the TWO deliberately distinct vocabularies the
+  // CLI's human surfaces already use (report.py:_position_suffix and
+  // report.py:_insertion_point_suffix) — not a third phrasing invented here,
+  // and never one shape doing both jobs:
+  //
+  //   source_line          -> "at line 28"                  the error IS here
+  //   insertion_point_line -> "(insertion point line 28)"   the missing thing
+  //                                                          GOES here
+  //
+  // The bare "line N" forms are the ones those helpers degrade to when there
+  // is no usable source path, which is exactly this page's situation: the
+  // engine sees the file at an in-memory mount path (/work/…) that means
+  // nothing to the visitor, so printing it would be noise, not an address.
+  //
+  // PRECEDENCE mirrors the CLI call sites' `_position_suffix(...) or
+  // _insertion_point_suffix(...)`: a proven error site always wins over a
+  // guessed-at destination if a record somehow carries both.
+  function positionNode(v) {
+    var el = document.createElement("div");
+    el.className = "pos";
+    if (usableLine(v.source_line)) {
+      el.textContent = "at line " + v.source_line;
+      return el;
+    }
+    if (usableLine(v.insertion_point_line)) {
+      el.className = "pos ins";
+      el.textContent = "(insertion point line " + v.insertion_point_line +
+                       ")";
+      return el;
+    }
+    return null;
+  }
+
+  // Wrap the engine's OWN build_html() projection of this very report in a
+  // Blob and hand it to the visitor as a file they can keep, forward to the
+  // accountant who owns the Leitweg-ID, or attach to an ERP ticket. The blob:
+  // URL is same-document and local; nothing is uploaded and no request is
+  // made. Returns null when there is no HTML to offer.
+  function reportDownload(html, safeName) {
+    if (typeof html !== "string" || html === "") { return null; }
+    var base = String(safeName || "invoice").replace(/\.[A-Za-z0-9]+$/, "");
+    if (!base) { base = "invoice"; }
+    revokeReportUrl();
+    reportUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    var p = document.createElement("p");
+    var a = document.createElement("a");
+    a.href = reportUrl;
+    a.download = base + "-einvoice-report.html";
+    a.textContent = "Download this report (" + a.download + ")";
+    p.appendChild(a);
+    p.appendChild(document.createTextNode(
+      " — one self-contained HTML file, generated here in your browser. " +
+      "Your invoice is not uploaded."));
+    return p;
+  }
+
+  function revokeReportUrl() {
+    if (reportUrl) { URL.revokeObjectURL(reportUrl); reportUrl = null; }
+  }
+
   function ruleCell(ruleId, title) {
     var td = document.createElement("td");
     var code = document.createElement("code");
@@ -3654,8 +3737,12 @@ _VALIDATE_JS = r"""
     return td;
   }
 
-  function renderReport(report, displayName) {
+  function renderReport(report, displayName, html, safeName) {
     resultEl.textContent = "";
+    // The previous result (and its download link) has just left the DOM, so
+    // its object URL is revoked here — before any new one is created, and on
+    // EVERY path including the not-well-formed early return below.
+    revokeReportUrl();
     var h = document.createElement("h2");
     h.textContent = "Findings for " + displayName;
     resultEl.appendChild(h);
@@ -3675,6 +3762,12 @@ _VALIDATE_JS = r"""
       " fatal, " + report.warning_count + " warning, profile " +
       report.profile + ".";
     resultEl.appendChild(summary);
+
+    // Offered on BOTH outcomes: a green report is exactly the artifact an
+    // evaluator forwards. Deliberately NOT offered above, on the
+    // report.error early return — there is no conformance verdict to keep.
+    var dl = reportDownload(html, safeName);
+    if (dl) { resultEl.appendChild(dl); }
 
     var v = report.violations || [];
     if (v.length === 0) { return; }
@@ -3701,6 +3794,11 @@ _VALIDATE_JS = r"""
       var msgText = document.createElement("div");
       msgText.textContent = v[m].message;
       msg.appendChild(msgText);
+      // Position, when (and only when) the record carries a usable one. A
+      // finding with neither line appends NOTHING and its row is
+      // byte-for-byte what it was before this shipped.
+      var pos = positionNode(v[m]);
+      if (pos) { msg.appendChild(pos); }
       // The catalog's own one-line fix guidance, relayed VERBATIM (no
       // wording is authored here). Absent/null -> nothing is added and the
       // row is byte-for-byte what it was before.
@@ -3732,8 +3830,10 @@ _VALIDATE_JS = r"""
       pyodide.FS.mkdirTree("/work");
       var path = "/work/" + safe;
       pyodide.FS.writeFile(path, new Uint8Array(buf));
-      var report = JSON.parse(validateFn(path, profileSel.value));
-      renderReport(report, file.name || safe);
+      // ONE engine call; the payload carries the report dict AND the
+      // engine's own HTML projection of it (see mountEngine).
+      var payload = JSON.parse(validateFn(path, profileSel.value));
+      renderReport(payload.report, file.name || safe, payload.html, safe);
       setStatus("Done — validated locally; nothing was uploaded.", "ok");
     } catch (e) {
       setStatus("Validation errored: " + (e && e.message ? e.message :
@@ -3833,9 +3933,17 @@ def render_validate(catalog):
         # Spacing only, applied to the EXISTING .assert class, for the
         # catalog fix line rendered under a finding's message.
         "\ntable.cmp .assert { margin: .45rem 0 0; }"
+        # The finding's position line. Monospaced so 'at line 28' reads as an
+        # address; the insertion-point variant is italic so the two kinds are
+        # distinguishable at a glance as well as in wording.
+        "\ntable.cmp .pos { margin: .3rem 0 0; color: #57606a;"
+        " font-family: ui-monospace, SFMono-Regular, Menlo, monospace;"
+        " font-size: .85em; }"
+        "\ntable.cmp .pos.ins { font-style: italic; }"
         "\n@media (prefers-color-scheme: dark) {"
         " table.cmp th, table.cmp td { border-color: #30363d; }"
         " table.cmp th { background: #161b22; }"
+        " table.cmp .pos { color: #8b949e; }"
         " .dropzone { border-color: #30363d; }"
         " .status { border-color: #30363d; } }")
 
@@ -3925,6 +4033,27 @@ def render_validate(catalog):
       "<a href=\"../rules/index.html\">the rule index</a>, with the official "
       "Schematron assert, the BT/BG terms and a concrete fix in English and "
       "German.</p>")
+    w("<p>Where the engine could place a finding in the file, the row also "
+      "carries a line number &mdash; in one of two deliberately different "
+      "shapes, because they mean different things. "
+      "<code>at line 28</code> means the offending element <em>is</em> on "
+      "line&nbsp;28. <code>(insertion point line 28)</code> means the "
+      "opposite: nothing on line&nbsp;28 is wrong, that is simply where the "
+      "<em>missing</em> element would go &mdash; the wording matches the "
+      "CLI&rsquo;s text report exactly. Findings the engine cannot place "
+      "honestly carry no line at all rather than a guessed one; the "
+      "<code>0</code>-th line and a &ldquo;:1&rdquo; fallback are both "
+      "worse than silence.</p>")
+    w("<p>Every result &mdash; pass or fail &mdash; also offers a "
+      "<strong>Download this report</strong> link. That file is the same "
+      "single self-contained HTML document <code>einvoice validate "
+      "--format html</code> writes on the command line: no script, no "
+      "external stylesheet, no web font, nothing to fetch, so it opens the "
+      "same way in five years or behind a corporate proxy. It is built by "
+      "the engine <em>in this tab</em> from the validation you just ran and "
+      "handed to you as a local <code>blob:</code> file &mdash; your invoice "
+      "is still not uploaded, and neither is the report. Forward it to "
+      "whoever owns the Leitweg-ID, or attach it to the ERP ticket.</p>")
     w("<p>Same limits as the CLI, stated plainly: no XSD structural "
       "validation; UBL <code>Invoice</code> and UBL 2.1 <code>CreditNote</code> "
       "are both validated through the same EN 16931 engine, and so is "

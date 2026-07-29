@@ -27,10 +27,20 @@ What is actually asserted (each maps to a README/pyproject claim):
      "fresh"; this file owns only the fact that a registered gate runs it.
      (T-VHWEB.4: the bundle sat ~15 commits stale, 6c4dd18..9ed0b74, because
      test_web_bundle.py was not registered anywhere. Now it cannot be.)
+  7. STOREFRONT METADATA: the PyPI project page is the only discovery channel
+     for this package that needs no owner action, and up to 0.2.7 it was a
+     dead end — one Project-URL (to a repo root), no keywords, no licence text
+     in the artifact. `StorefrontMetadata` below pins the fix: every declared
+     Project-URL is https and on a domain we own, at least three of them reach
+     the product's own pages, keywords exist and stay honest (`peppol` must
+     never appear), exactly one Development Status classifier is declared, the
+     per-minor Python classifiers agree with requires-python, and the licence
+     text the artifact ships is really there and really Apache-2.0.
 
 Standard library only. Runs offline.
 """
 
+import ast
 import contextlib
 import io
 import os
@@ -40,6 +50,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.parse
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -49,6 +60,8 @@ PKG_DIR = os.path.join(HERE, "einvoice")
 WRAPPER = os.path.join(HERE, "einvoice.py")
 PYPROJECT = os.path.join(HERE, "pyproject.toml")
 GATE = os.path.join(HERE, "ci", "validate-invoices.sh")
+NOTICE = os.path.join(HERE, "NOTICE")
+REPO_LICENSE = os.path.join(os.path.dirname(HERE), "LICENSE")
 BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
                     "business-cases", "standard", "01.01a-INVOICE_ubl.xml")
 
@@ -69,6 +82,63 @@ def make_bad_invoice(dest):
     assert bad != src, "fixture drift: BASE lost its BuyerReference"
     with open(dest, "w", encoding="utf-8") as fh:
         fh.write(bad)
+
+
+def _strip_full_line_comments(chunk):
+    """Drop whole-line ``#`` comments. Deliberately does NOT touch trailing
+    comments or ``#`` inside strings, so it cannot corrupt a URL fragment."""
+    return "\n".join(ln for ln in chunk.splitlines()
+                     if not ln.lstrip().startswith("#"))
+
+
+def toml_table(text, name):
+    """Body of the TOML table ``[name]``: everything after its header up to the
+    next top-level ``[...]`` header. Returns None when the table is absent.
+
+    Same deliberately-dumb line-scan approach as test_release_discipline.py's
+    ``pyproject_version()`` and test_wheel_self_report.py's parsers: Python
+    here is 3.10, which has no ``tomllib``, and the zero-dependency contract
+    forbids pulling in ``tomli``. Scoping by table means a key under one table
+    can never be mistaken for the same key under another.
+    """
+    m = re.search(r"(?m)^\[%s\]\s*$" % re.escape(name), text)
+    if m is None:
+        return None
+    rest = text[m.end():]
+    nxt = re.search(r"(?m)^\[[^\]]+\]\s*$", rest)
+    return rest[:nxt.start()] if nxt else rest
+
+
+def toml_list(section, key):
+    """``key = [ ... ]`` inside ``section``, as a Python list.
+
+    TOML array-of-strings syntax is a subset of Python literal syntax once
+    whole-line comments are removed, so ``ast.literal_eval`` is enough and no
+    parser dependency is needed.
+    """
+    m = re.search(r"(?m)^\s*%s\s*=\s*(\[.*?\])" % re.escape(key), section,
+                  re.S)
+    if m is None:
+        return None
+    return ast.literal_eval(_strip_full_line_comments(m.group(1)))
+
+
+def toml_string_pairs(section):
+    """``key = "value"`` lines of a TOML table, as an ordered list of pairs.
+
+    Handles both bare keys (``Homepage``) and quoted keys (``"Why not
+    KoSIT?"``), which [project.urls] needs because a PyPI sidebar label may
+    contain spaces and punctuation.
+    """
+    pairs = []
+    for line in section.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        m = re.match(r'^\s*(?:"([^"]+)"|([A-Za-z0-9_.\- ]+?))\s*=\s*'
+                     r'"([^"]*)"\s*$', line)
+        if m:
+            pairs.append(((m.group(1) or m.group(2)).strip(), m.group(3)))
+    return pairs
 
 
 class EntryPoints(unittest.TestCase):
@@ -314,6 +384,276 @@ class WebBundleFreshness(unittest.TestCase):
             "hand-edit a bundled file or manifest.json).\n" + report)
 
 
+class StorefrontMetadata(unittest.TestCase):
+    """Claim 7 — the PyPI project page is navigable, honest, and self-contained.
+
+    HOW THIS IS ASSERTED, honestly: these are contract tests over the
+    DECLARATIONS THAT SHAPE the artifact, not over a real METADATA file. This
+    file's own `WheelBuild` test is the only place that builds a wheel (it is
+    env-guarded on setuptools>=61 and pip), and
+    test_wheel_self_report.build_install_image() reproduces the wheel's
+    *package payload* only — it copies `packages` + `package-data` and models
+    nothing about `dist-info/licenses/`. So nothing here pretends to read
+    METADATA; each test names the pyproject key it is guarding and, where a
+    declaration points at a file on disk (license-files), checks that file for
+    real. Building or installing a distribution to test this would mean pip,
+    a build backend or the network inside a gate, which this suite does not do.
+    """
+
+    maxDiff = None
+
+    def setUp(self):
+        with open(PYPROJECT, encoding="utf-8") as fh:
+            self.text = fh.read()
+        self.project = toml_table(self.text, "project")
+        self.assertIsNotNone(self.project, "pyproject.toml has no [project]")
+        urls = toml_table(self.text, "project.urls")
+        self.assertIsNotNone(urls,
+                             "[project.urls] is missing — the PyPI sidebar is "
+                             "the package's only no-owner-action discovery "
+                             "channel")
+        self.url_pairs = toml_string_pairs(urls)
+
+    # ---------------------------------------------------------------- URLs
+
+    def test_every_project_url_is_https_and_on_a_domain_we_own(self):
+        self.assertTrue(self.url_pairs, "[project.urls] declares nothing")
+        for label, url in self.url_pairs:
+            self.assertTrue(
+                url.startswith("https://"),
+                "Project-URL %r is not https: %r" % (label, url))
+            parts = urllib.parse.urlsplit(url)
+            self.assertEqual(parts.scheme, "https", url)
+            if parts.netloc == "verifyhash.com":
+                continue
+            # Only our own repository on GitHub — not the org root, not a
+            # third-party host. A PyPI sidebar link is an endorsement; we only
+            # endorse addresses we control.
+            self.assertEqual(
+                parts.netloc, "github.com",
+                "Project-URL %r points at a host we do not own: %r"
+                % (label, url))
+            self.assertTrue(
+                parts.path == "/verifyhash/verifyhash"
+                or parts.path.startswith("/verifyhash/verifyhash/"),
+                "Project-URL %r is on github.com but not on the verifyhash "
+                "repository: %r" % (label, url))
+
+    def test_product_pages_and_issue_tracker_are_reachable_from_pypi(self):
+        values = [u for _, u in self.url_pairs]
+        product = [u for u in values
+                   if u.startswith("https://verifyhash.com/einvoice/")]
+        self.assertGreaterEqual(
+            len(product), 3,
+            "the PyPI sidebar must reach at least three of the product's own "
+            "pages, not just a repo root; got %r" % (product,))
+        # The three that answer a visitor's first three questions: what is it,
+        # why not the incumbent, can I try it without installing anything.
+        for required in ("https://verifyhash.com/einvoice/",
+                         "https://verifyhash.com/einvoice/compare/",
+                         "https://verifyhash.com/einvoice/validate/"):
+            self.assertIn(required, values,
+                          "[project.urls] must link %s" % required)
+        issues = [(k, v) for k, v in self.url_pairs
+                  if re.search(r"issue|bug|tracker", k, re.I)]
+        self.assertTrue(
+            issues,
+            "no Issues / Bug Tracker URL declared — a user who hits a false "
+            "positive on a legally-forced compliance run must be one click "
+            "from reporting it; got labels %r"
+            % ([k for k, _ in self.url_pairs],))
+        for _, url in issues:
+            self.assertTrue(url.endswith("/issues"), url)
+
+    def test_no_changelog_url_until_the_file_is_actually_pushed(self):
+        """einvoice/CHANGELOG.md is not at origin/main, so a blob/main link
+        would 404 for every visitor. The omission is deliberate and the
+        pyproject comment must keep saying why, so that whoever pushes the
+        history knows to add the link in the same change."""
+        for label, url in self.url_pairs:
+            self.assertNotRegex(
+                label, r"(?i)change ?log",
+                "a Changelog Project-URL is declared, but the file it would "
+                "point at is not on origin/main yet")
+            self.assertNotIn(
+                "/blob/main/", url,
+                "Project-URL %r links a repository blob (%r); blob links go "
+                "stale silently — link a published page instead" % (label, url))
+        self.assertIn(
+            "CHANGELOG.md", self.text,
+            "the reason the Changelog URL is omitted must stay written down "
+            "in pyproject.toml")
+
+    # ------------------------------------------------------------ keywords
+
+    def test_keywords_are_present_and_claim_nothing_we_do_not_do(self):
+        keywords = toml_list(self.project, "keywords")
+        self.assertIsNotNone(keywords,
+                             "pyproject.toml must declare `keywords` — PyPI "
+                             "search has nothing else to match on")
+        self.assertTrue(keywords, "`keywords` is empty")
+        for kw in keywords:
+            self.assertIsInstance(kw, str)
+            self.assertTrue(kw.strip(), "blank keyword in %r" % (keywords,))
+            self.assertEqual(kw, kw.lower(), "keyword %r is not lower-case" % kw)
+        self.assertEqual(len(keywords), len(set(keywords)),
+                         "duplicate keyword in %r" % (keywords,))
+        # `peppol` is the one term this product refuses. What is vendored is
+        # the 21-assert KoSIT `PEPPOL-EN16931-R*` subset, NOT the OpenPeppol
+        # ruleset — CORRECTNESS.md §5 says so explicitly ("the OpenPeppol
+        # ruleset proper beyond the KoSIT-vendored subset … it makes no claim
+        # at all"). A `peppol` keyword would sell a capability we do not have,
+        # so it is banned from the whole file, not merely from the list.
+        hits = [i + 1 for i, ln in enumerate(self.text.splitlines())
+                if "peppol" in ln.lower()]
+        self.assertEqual(
+            hits, [],
+            "`peppol` must not appear anywhere in pyproject.toml (found on "
+            "line(s) %r): the vendored subset is 21 KoSIT asserts, not the "
+            "OpenPeppol ruleset (CORRECTNESS.md §5)" % (hits,))
+
+    # --------------------------------------------------------- classifiers
+
+    def test_exactly_one_development_status_and_it_is_the_decided_one(self):
+        classifiers = toml_list(self.project, "classifiers")
+        self.assertIsNotNone(classifiers)
+        status = [c for c in classifiers if c.startswith("Development Status ::")]
+        self.assertEqual(
+            len(status), 1,
+            "exactly one Development Status classifier may be declared; got %r"
+            % (status,))
+        # Decided against CORRECTNESS.md §5 and recorded as a comment in
+        # pyproject.toml: §5's limits are SCOPE limits (no XSD, no signatures,
+        # "corpus, not universe"), not maturity limits, and "Alpha" is the one
+        # word that disqualifies a validator from a compliance pipeline.
+        self.assertEqual(status[0], "Development Status :: 4 - Beta")
+        self.assertIn("CORRECTNESS.md", self.text,
+                      "the Development-Status decision must stay traceable to "
+                      "CORRECTNESS.md from pyproject.toml itself")
+
+    def test_python_minor_classifiers_agree_with_requires_python(self):
+        classifiers = toml_list(self.project, "classifiers")
+        m = re.search(r'(?m)^\s*requires-python\s*=\s*">=3\.(\d+)"\s*$',
+                      self.project)
+        self.assertIsNotNone(
+            m, "requires-python must be a `>=3.N` floor for this guard")
+        floor = int(m.group(1))
+        minors = sorted(
+            int(c.rsplit(".", 1)[1]) for c in classifiers
+            if re.fullmatch(r"Programming Language :: Python :: 3\.\d+", c))
+        self.assertTrue(
+            minors,
+            "no per-minor `Programming Language :: Python :: 3.N` classifiers "
+            "— PyPI's sidebar version filter has nothing to match")
+        self.assertGreaterEqual(
+            minors[0], floor,
+            "classifier claims Python 3.%d but requires-python is >=3.%d"
+            % (minors[0], floor))
+        self.assertEqual(
+            minors[0], floor,
+            "requires-python allows 3.%d but the lowest classified minor is "
+            "3.%d — the sidebar filter would hide us from users on the oldest "
+            "version we actually support" % (floor, minors[0]))
+        self.assertEqual(
+            minors, list(range(minors[0], minors[-1] + 1)),
+            "the classified Python minors have a hole in them: %r" % (minors,))
+        self.assertIn("Programming Language :: Python :: 3", classifiers,
+                      "keep the generic Python 3 classifier alongside the "
+                      "per-minor ones")
+        for required in ("Topic :: Software Development :: Quality Assurance",
+                         "Natural Language :: German",
+                         "Natural Language :: English"):
+            self.assertIn(required, classifiers)
+
+    # ------------------------------------------------------------- licence
+
+    def test_licence_text_ships_inside_the_distribution(self):
+        setuptools_table = toml_table(self.text, "tool.setuptools")
+        self.assertIsNotNone(setuptools_table)
+        license_files = toml_list(setuptools_table, "license-files")
+        self.assertIsNotNone(
+            license_files,
+            "[tool.setuptools] must declare `license-files` — up to 0.2.7 the "
+            "artifact carried no LICENSE at all")
+        for name in ("LICENSE", "NOTICE"):
+            self.assertIn(
+                name, license_files,
+                "an explicit license-files list REPLACES setuptools' default "
+                "LICENSE*/NOTICE* glob, so omitting %s silently stops "
+                "shipping it" % name)
+        for name in license_files:
+            path = os.path.join(HERE, name)
+            self.assertTrue(os.path.isfile(path),
+                            "declared license file %r does not exist next to "
+                            "pyproject.toml" % name)
+            self.assertGreater(os.path.getsize(path), 0,
+                               "declared license file %r is empty" % name)
+        # Byte-equality with the repo-root original, the same duplicated-
+        # artifact discipline test_attestation.py / test_remediation_catalog.py
+        # apply to attestation.json and remediation_catalog.json.
+        with open(os.path.join(HERE, "LICENSE"), "rb") as fh:
+            shipped = fh.read()
+        with open(REPO_LICENSE, "rb") as fh:
+            root = fh.read()
+        self.assertEqual(
+            shipped, root,
+            "einvoice/LICENSE has drifted from the repo-root LICENSE (%d vs "
+            "%d bytes) — it must be a byte-identical copy"
+            % (len(shipped), len(root)))
+
+    def test_license_declaration_and_classifier_agree_with_the_shipped_text(self):
+        classifiers = toml_list(self.project, "classifiers")
+        osi = [c for c in classifiers if c.startswith("License :: ")]
+        table = re.search(r'(?m)^\s*license\s*=\s*\{\s*text\s*=\s*"([^"]+)"',
+                          self.project)
+        string = re.search(r'(?m)^\s*license\s*=\s*"([^"]+)"\s*$', self.project)
+        self.assertTrue(table or string,
+                        "pyproject.toml must declare a `license` key")
+        if string:
+            # PEP 639 route: License-Expression. Only legal from setuptools 77,
+            # and it BANS the OSI classifier — so the build-system floor must
+            # have been raised in the same change.
+            declared = string.group(1)
+            self.assertEqual(osi, [],
+                             "PEP 639 `license = \"...\"` forbids a "
+                             "`License ::` classifier; found %r" % (osi,))
+            floor = re.search(r'setuptools>=(\d+)', self.text)
+            self.assertIsNotNone(floor)
+            self.assertGreaterEqual(
+                int(floor.group(1)), 77,
+                "a PEP 639 license expression needs setuptools>=77, but "
+                "[build-system] still promises a lower floor")
+        else:
+            # Table route, which is what the declared setuptools>=61 floor
+            # honours (see the comment in pyproject.toml).
+            declared = table.group(1)
+            self.assertIn("License :: OSI Approved :: Apache Software License",
+                          osi)
+        self.assertEqual(declared, "Apache-2.0")
+        with open(os.path.join(HERE, "LICENSE"), encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertIn("Apache License", text)
+        self.assertIn("Version 2.0", text)
+
+    def test_notice_does_not_send_the_reader_off_the_artifact(self):
+        """Apache-2.0 §4(a) asks a redistributor to hand over the licence text.
+        Up to 0.2.7 the NOTICE ended by pointing at "the LICENSE file at the
+        repository root" — a file the distribution did not contain, so the
+        artifact described something the recipient did not hold."""
+        with open(NOTICE, encoding="utf-8") as fh:
+            notice = fh.read()
+        self.assertNotIn(
+            "license text is the LICENSE file", notice,
+            "the NOTICE still points at a LICENSE the recipient may not have")
+        self.assertNotRegex(
+            notice, r"(?is)full license text[^.]{0,120}repository root",
+            "the NOTICE still sends the reader to the repository for the "
+            "licence text instead of to the copy shipped beside it")
+        self.assertIn("LICENSE", notice,
+                      "the NOTICE should still name the LICENSE file that now "
+                      "travels with the distribution")
+
+
 def _setuptools_can_pep621():
     try:
         import setuptools
@@ -338,9 +678,14 @@ class WheelBuild(unittest.TestCase):
             os.mkdir(src)
             shutil.copytree(PKG_DIR, os.path.join(src, "einvoice"),
                             ignore=shutil.ignore_patterns("__pycache__"))
-            # pyproject.toml + the README it references are all the backend
-            # needs (packages = ["einvoice"] is explicit; no corpus/tests).
-            for f in ("pyproject.toml", "README.md"):
+            # pyproject.toml + the README it references + the two declared
+            # license-files are all the backend needs (packages = ["einvoice"]
+            # is explicit; no corpus/tests). LICENSE/NOTICE are copied because
+            # setuptools SILENTLY skips a license-files pattern that matches
+            # nothing (measured), so a build from a tree missing them would
+            # produce a green wheel with no licence in it — exactly the 0.2.7
+            # bug this test now guards.
+            for f in ("pyproject.toml", "README.md", "LICENSE", "NOTICE"):
                 shutil.copy(os.path.join(HERE, f), os.path.join(src, f))
             out = os.path.join(tmp, "wheels")
             os.mkdir(out)
@@ -357,6 +702,23 @@ class WheelBuild(unittest.TestCase):
                 ep = next(n for n in names if n.endswith("entry_points.txt"))
                 self.assertIn("einvoice = einvoice.cli:main",
                               zf.read(ep).decode())
+                # The licence text really lands in the built artifact. Where
+                # setuptools puts it moved over the versions (dist-info/ root
+                # on old releases, dist-info/licenses/ since 77), so match on
+                # "inside .dist-info, by basename" rather than on a fixed path.
+                dist_info = [n for n in names if ".dist-info/" in n]
+                for want in ("LICENSE", "NOTICE"):
+                    hit = [n for n in dist_info
+                           if os.path.basename(n) == want]
+                    self.assertEqual(
+                        len(hit), 1,
+                        "%s is not in the wheel's .dist-info; the artifact "
+                        "would ship without its licence text again. Members: "
+                        "%r" % (want, dist_info))
+                    with open(os.path.join(HERE, want), "rb") as fh:
+                        self.assertEqual(zf.read(hit[0]), fh.read(),
+                                         "wheel's %s differs from the source "
+                                         "tree copy" % want)
 
 
 if __name__ == "__main__":

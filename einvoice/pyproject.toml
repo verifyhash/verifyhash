@@ -20,19 +20,109 @@ version = "0.2.7"
 description = "Zero-dependency EN 16931 / XRechnung (UBL + CII) e-invoice conformance validator — 297 business rules including the national BR-DE and BR-DEX CIUS/extension layers, each differential-tested to 0 divergences against the official Schematron within the implemented set; every fireable BR-CL-* code-list check is now implemented in both syntaxes; see CORRECTNESS.md for the honest remaining scope."
 readme = "README.md"
 requires-python = ">=3.8"
+
+# LICENCE DECLARATION — why the TABLE form and not PEP 639.
+#
+# PEP 639 (`license = "Apache-2.0"`, a plain STRING) emits a
+# `License-Expression` metadata field and is the modern spelling, but
+# setuptools only understands it from 77.0 onward, and it additionally
+# FORBIDS the `License :: OSI Approved ::` classifier once used. Adopting it
+# would mean raising [build-system] `requires` from `setuptools>=61` to
+# `setuptools>=77` — i.e. quietly narrowing who can build this package from a
+# source checkout — to gain a metadata field nobody consuming us asks for.
+# The floor is a promise, so it stays where it is.
+#
+# The TABLE form below sets the classic `License:` metadata field, is honoured
+# by the declared >=61 floor, still works on the 83.0.0 setuptools this tree
+# builds with (deprecated there, with an announced due date of 2027-02-18 —
+# revisit before then, together with the floor), and keeps the OSI classifier
+# legal. `license-files` under [tool.setuptools] (see below) is the form that
+# same >=61 floor honours, so the two declarations agree.
+license = {text = "Apache-2.0"}
+
+# The published metadata card said `3 - Alpha` up to and including 0.2.7. That
+# was an UNDERCLAIM, and an actively harmful one: "Alpha" is the single word
+# that disqualifies a validator from someone's compliance pipeline. Against
+# CORRECTNESS.md — in particular §5 "The honest remaining gap", which is the
+# most pessimistic statement we make about this engine anywhere — the honest
+# reading is Beta: 297 differentially-proven business rules, every one graded
+# against the official compiled Schematron; a published, installable wheel; a
+# GitHub Action; 148 test files. §5's limits (no XSD validation, no signature
+# verification, "corpus, not universe", "not a legal conformance certificate")
+# are SCOPE limits, not maturity limits — none of them says the implemented
+# engine is unstable, unfinished or unfit to run. `5 - Production/Stable`
+# would be the overclaim in the other direction while the API is still free to
+# move inside 0.x, so: 4 - Beta.
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
+    "Natural Language :: English",
+    # The BR-DE-*/BR-DEX-* XRechnung layer, the German-language pages of the
+    # site and the German violation messages are a real part of the product.
+    "Natural Language :: German",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    # Per-minor entries exist to drive PyPI's sidebar version filter; they
+    # mirror `requires-python = ">=3.8"` exactly and must be kept in step with
+    # it (test_packaging.py asserts the two agree).
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Office/Business :: Financial :: Accounting",
+    "Topic :: Software Development :: Quality Assurance",
 ]
+
+# Search terms a buyer actually types. Every one of these names something the
+# engine genuinely handles (the two syntaxes, the EN 16931 core, the German
+# CIUS, the hybrid PDF containers) — no aspirational terms.
+#
+# One term is deliberately banned from this whole file, and test_packaging.py
+# enforces its absence negatively: the pan-European network's name. What the
+# engine vendors is a 21-assert KoSIT-published subset of that network's
+# EN 16931 rules, not the network's own ruleset and none of its transport,
+# participant-lookup or access-point machinery. CORRECTNESS.md §5 says so
+# outright. Using it as a search keyword would sell a capability we do not
+# have, to exactly the buyers least able to check.
+keywords = [
+    "xrechnung",
+    "en16931",
+    "e-rechnung",
+    "zugferd",
+    "factur-x",
+    "ubl",
+    "cii",
+    "e-invoicing",
+    "conformance",
+    "validator",
+]
+
 # ZERO runtime dependencies — the whole point. Do not add any.
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/verifyhash/verifyhash"
+# The PyPI sidebar is the only discovery channel for this package that needs
+# no action from anyone, so it links to the pages that answer a visitor's
+# actual next question, not just to a repo root. Every URL here was probed and
+# returns 200; they use the same base as gen_site.py's BASE_URL
+# ("https://verifyhash.com/einvoice"), trailing slash included, so the site
+# generator and this file cannot drift into different spellings.
+#
+# NO Changelog entry, on purpose: `einvoice/CHANGELOG.md` exists in the working
+# tree but NOT at `origin/main` (measured this run:
+# `git cat-file -e origin/main:einvoice/CHANGELOG.md` -> absent), so a
+# .../blob/main/einvoice/CHANGELOG.md link would 404 for every visitor until
+# that history is pushed. Add the entry in the same change that pushes it.
+Homepage = "https://verifyhash.com/einvoice/"
+Documentation = "https://verifyhash.com/einvoice/walkthrough/"
+"Why not KoSIT?" = "https://verifyhash.com/einvoice/compare/"
+"Browser validator" = "https://verifyhash.com/einvoice/validate/"
+"Rule index" = "https://verifyhash.com/einvoice/rules/"
+Licensing = "https://verifyhash.com/einvoice/licensing/"
+Source = "https://github.com/verifyhash/verifyhash"
+Issues = "https://github.com/verifyhash/verifyhash/issues"
 
 [project.scripts]
 einvoice = "einvoice.cli:main"
@@ -40,6 +130,23 @@ einvoice = "einvoice.cli:main"
 [tool.setuptools]
 # Explicit: ship the pure-Python package only (never corpus/, ci/, tests).
 packages = ["einvoice"]
+
+# Ship the licence text INSIDE the artifact. Up to 0.2.7 the sdist/wheel
+# carried only NOTICE, which then pointed the reader at a LICENSE file the
+# distribution did not contain — Apache-2.0 §4(a) asks the opposite. LICENSE
+# here is a byte-identical copy of the repo-root LICENSE (asserted by
+# test_packaging.py, the same duplicated-artifact pattern already used for
+# attestation.json and remediation_catalog.json).
+#
+# TRAP, and the reason NOTICE is listed explicitly: an explicit license-files
+# list REPLACES setuptools' default glob (LICENSE*/NOTICE*/COPYING*/AUTHORS*).
+# NOTICE reaches dist-info/licenses/ today only via that default; dropping it
+# from this list would silently stop shipping it.
+#
+# This is the [tool.setuptools] spelling rather than the PEP 639 [project]
+# `license-files` key because the latter needs setuptools>=77 and the
+# [build-system] floor is >=61 — see the `license` comment in [project].
+license-files = ["LICENSE", "NOTICE"]
 
 [tool.setuptools.package-data]
 # PEP 561: ship the `py.typed` marker so the embedded type hints are honoured

@@ -233,6 +233,62 @@ Scope and invariants:
   a SARIF body is meaningless. An invalid value there keeps its historical
   `error: unknown format '<x>' in config …` message and exit `2`.
 
+## `--baseline <prev-report.json>` on the console script — no new code (additive)
+
+`einvoice validate --baseline prev-report.json invoice.xml` is REGRESSION-GATE
+mode: it validates the invoice now, diffs the findings against a report you
+captured earlier, and fails **only on a violation that is new since that
+baseline**. It is how you put this tool in front of a legacy invoice corpus
+without a red day-one build — pre-existing fatals are tolerated, regressions are
+not. The diff document (`einvoice-conformance-diff/v1`) and the diff arithmetic
+are the sibling `python3 -m einvoice.report --baseline …` implementation,
+delegated to, not re-implemented — so both surfaces emit the same bytes.
+
+```
+einvoice validate --profile xrechnung --json invoice.xml > baseline.json   # once
+einvoice validate --profile xrechnung --baseline baseline.json invoice.xml # in CI
+```
+
+**This mints no new exit code.** The rows it uses are the rows above; what
+matters is which one each outcome lands on:
+
+| Code | When, with `--baseline` set | Stream |
+|------|-----------------------------|--------|
+| `0` | Zero **new** fatal violations versus the baseline. Fatals that were already in the baseline are tolerated — that is the whole point of the flag — and `resolved_violations` records the ones you fixed. | stdout: the complete diff document. Nothing on stderr. |
+| `1` | At least one **new** fatal violation, i.e. a real regression against the captured baseline. | stdout: the complete diff document, including the `new_violations` array naming each rule id — a failing run still produces the artifact. |
+| `2` | Usage error — the **baseline file itself** could not be used, so no diff was computed and the verdict says nothing about your invoice. Four cases, each with one actionable `error:` line: the path **does not exist / cannot be read** (`error: cannot read baseline <path>: No such file or directory`, or `Permission denied`); the file **is not valid JSON** (`error: baseline <path> is not valid JSON: <parser detail>`); the path **is a directory** (`error: cannot read baseline <path>: Is a directory`); or the file is valid JSON but **is not a conformance report** (no `violations` array, or a malformed violation record). Also `--baseline` combined with an **incompatible `--format`** — a diff has only a JSON form, so `--format sarif/junit/gitlab/github/azure/html/badge/text` with `--baseline` is refused (`error: --baseline emits a diff document and is not compatible with --format <fmt>`). | stderr: one `error:` line plus **this** command's `usage:` banner. stdout stays completely empty — no half-written diff can reach a parser. |
+| `3` | The **current** invoice could not be parsed (not-well-formed XML / unsupported container), so there was nothing to diff. | stdout: the diff document carrying `"error": "not-well-formed"`. |
+
+Scope and invariants:
+
+- **`2` is the setup error, `1` is the verdict.** MEASURED and fixed in
+  T-VHGATE.3 (2026-07-29): all of the code-`2` cases above used to exit `1`, so
+  the first CI run after adopting the gate went red *and blamed the invoices*
+  for what was a wrong path or a stale artifact name in the pipeline. The rule
+  now matches the rest of this table — `1` means "at least one implemented fatal
+  rule failed", and a baseline the tool never managed to read produces no
+  verdict at all. `test_exit_codes.py` re-derives all seven rows by driving the
+  real CLI.
+- **The sibling entry point keeps its own codes.** `python3 -m einvoice.report`
+  spends `1` on usage errors as it always has (`--bogusflag` there is still `1`);
+  that legacy convention is unchanged and is pinned by the same test. The
+  translation happens at the console script's delegation boundary, so no
+  existing `einvoice.report` caller sees a different number.
+- **The banner names the command you typed.** A `--baseline` refusal prints
+  `usage: einvoice validate …`, never the sibling module's usage line — which
+  advertises `--pretty` and `--recurse`, two flags `einvoice validate` does not
+  accept.
+- **The diff document is unchanged**, byte for byte, in all three validation
+  outcomes; it is golden-pinned by `test_golden_snapshot.py` and exercised on
+  both surfaces by `test_report_diff.py`.
+- `--profile` is passed through to the diff explicitly, because the two entry
+  points default differently (`en16931` here, `xrechnung` there). Capture the
+  baseline with the **same** `--profile` you gate with, or the diff will report
+  a rule-set change as a regression.
+- `--lang` and `--fail-on` are refused with `--baseline` (exit `2`): the diff is
+  a machine document with no human summary to translate, and its threshold is
+  fixed at "a new fatal".
+
 ## `--explain <RULE-ID> [--lang=en|de]` — catalog lookup, no new code (additive)
 
 `einvoice --explain BR-CO-15` prints the `remediation_catalog.json` entry for

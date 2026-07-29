@@ -1156,6 +1156,105 @@ def _run_validate_format(path, display_path, fmt, profile, fail_on):
     return EXIT_OK
 
 
+def _run_validate_baseline(path, baseline_path, profile, format_flag):
+    """Drive ``einvoice validate --baseline <prev-report.json>`` — REGRESSION
+    DIFF mode — by delegating to :func:`einvoice.report.main`, and translate
+    the ONE outcome class the two entry points disagree about.
+
+    ONE IMPLEMENTATION. Nothing about the diff is computed here: no
+    ``load_baseline``, no ``_multiset_diff``, no ``build_diff``, no exit-code
+    arithmetic, and not one of report.py's refusal checks is repeated. A
+    NORMALISED argv goes to ``einvoice.report``'s own ``main()`` — the same
+    delegation shape :func:`_run_explain` uses — so the console script and
+    ``python3 -m einvoice.report`` emit the same einvoice-conformance-diff/v1
+    bytes by construction rather than by two implementations agreeing.
+
+    ``--profile`` is always passed: the two entry points have different profile
+    DEFAULTS (en16931 here, xrechnung there), so an omitted profile would
+    silently regrade the invoice. ``--format`` is passed only when the user
+    actually typed one; otherwise report's own default (json) applies, which is
+    the only form a diff has.
+
+    WHAT THIS FUNCTION OWNS — the exit-code DIALECT, and nothing else.
+    ``einvoice.report`` is an older entry point that spends a single code (`1`)
+    on two unrelated meanings: "I validated and found a NEW fatal" and "you
+    invoked me wrong and I validated nothing". This console script's versioned
+    contract (EXIT-CODES.md) separates them — `1` is a verdict, `2` is "invoked
+    wrong / a named input file that does not exist". MEASURED defect this fixes
+    (2026-07-29, T-VHGATE.3): all four first-run ``--baseline`` mistakes — a
+    missing baseline path, an unreadable one, a baseline that is not JSON (or
+    not a report), a directory passed as the baseline, and ``--baseline``
+    combined with an incompatible ``--format`` — exited `1`, i.e. a CI job
+    adopting the regression gate got a red build that blamed the customer's
+    invoice for OUR setup error, while a sibling usage error on the very same
+    command (``--bogusflag``) already exited `2`.
+
+    THE DISCRIMINATOR IS THE DOCUMENT, NOT A COPY OF THE CHECKS. Every refusal
+    in report.py happens BEFORE it writes anything to stdout; every validation
+    outcome writes the complete diff document to stdout and only then picks its
+    code. So "the delegate returned without emitting a document" IS "the
+    delegate refused" — one observation of the delegate's own behaviour, which
+    stays correct if report.py grows a refusal we have never heard of. Hence
+    stdout/stderr are captured across the call and replayed:
+
+      * document present -> VALIDATION outcome: the bytes and the delegate's
+        own code pass through untouched (`0` when only pre-existing fatals
+        remain, `1` on a NEW fatal, `3` when the current invoice cannot be
+        parsed). The three success rows are byte-identical to before.
+      * no document -> USAGE outcome: :data:`EXIT_USAGE` (2), the delegate's
+        ``error:`` line kept (it names the real cause: the baseline path and
+        the OS reason, the JSON syntax error, the incompatible format), and its
+        ``usage: python3 -m einvoice.report …`` banner replaced by THIS entry
+        point's :data:`USAGE` — a user who typed ``einvoice validate`` was
+        being shown the syntax of a command they never ran, advertising
+        ``--pretty`` / ``--recurse``, two flags ``einvoice validate`` does not
+        accept. No line naming the sibling entry point survives.
+
+    ``einvoice.report``'s OWN exit codes are deliberately NOT changed by any of
+    this: ``python3 -m einvoice.report --bogusflag <file>`` still exits `1`.
+    That legacy convention belongs to that entry point; the translation lives
+    here, at the boundary, where the dialects meet.
+    """
+    # Local import, mirroring _run_explain / _run_validate_format: the module
+    # is already a module-level dependency of this file, so nothing new is
+    # pulled in.
+    from . import report as _report
+
+    report_argv = ["--baseline", baseline_path, "--profile", profile]
+    if format_flag is not None:
+        report_argv += ["--format", format_flag]
+    report_argv.append(path)
+
+    out, err = io.StringIO(), io.StringIO()
+    real_out, real_err = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = out, err
+    try:
+        code = _report.main(report_argv)
+    finally:
+        sys.stdout, sys.stderr = real_out, real_err
+    document, diagnostics = out.getvalue(), err.getvalue()
+
+    if document:
+        # VALIDATION outcome. Replayed verbatim, INSIDE the caller's try, so a
+        # consumer that closed the pipe still lands on the BrokenPipeError arm
+        # (141) exactly as it did when report.main wrote to the real stdout.
+        sys.stdout.write(document)
+        if diagnostics:
+            sys.stderr.write(diagnostics)
+        return code
+
+    # USAGE outcome. Drop the delegate's banner (one constant, substituted —
+    # not re-typed), then drop any remaining line that names the sibling entry
+    # point: those sentences are written for a command this user did not type.
+    detail = "\n".join(
+        line for line in diagnostics.replace(_report.USAGE, "").splitlines()
+        if line.strip() and "einvoice.report" not in line)
+    if detail:
+        sys.stderr.write(detail + "\n")
+    sys.stderr.write(USAGE + "\n")
+    return EXIT_USAGE
+
+
 def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal",
                         fmt="text"):
     """Drive ``einvoice validate-batch <dir|glob>``.
@@ -1839,30 +1938,12 @@ def _main(argv=None):
         # Dispatched here, ahead of the delegated-format branch, so that an
         # incompatible ``--format`` reaches einvoice.report's OWN refusal
         # (report.py rejects --baseline with every non-json form) instead of
-        # being answered twice in two dialects.
-        #
-        # ONE IMPLEMENTATION. Nothing about the diff is computed here: no
-        # load_baseline, no _multiset_diff, no build_diff, no exit-code
-        # arithmetic. A NORMALISED argv goes to ``einvoice.report``'s own
-        # main() — the identical delegation shape :func:`_run_explain` uses —
-        # so the console script and ``python3 -m einvoice.report`` emit the
-        # same einvoice-conformance-diff/v1 bytes and obey the same exit
-        # contract (0 when only pre-existing fatals remain, 1 on a NEW fatal,
-        # 3 when the current invoice cannot be parsed) by construction rather
-        # than by two implementations agreeing.
-        #
-        # ``--profile`` is always passed: the two entry points have different
-        # profile DEFAULTS (en16931 here, xrechnung there), so an omitted
-        # profile would silently regrade the invoice. ``--format`` is passed
-        # only when the user actually typed one; otherwise report's own
-        # default (json) applies, which is the only form a diff has.
+        # being answered twice in two dialects — the refusal is TRANSLATED
+        # into this entry point's dialect by :func:`_run_validate_baseline`,
+        # never re-derived here.
         if baseline_path is not None:
-            from .report import main as _report_main
-            report_argv = ["--baseline", baseline_path, "--profile", profile]
-            if format_flag is not None:
-                report_argv += ["--format", format_flag]
-            report_argv.append(path)
-            return _report_main(report_argv)
+            return _run_validate_baseline(path, baseline_path, profile,
+                                          format_flag)
 
         if fmt in DELEGATED_FORMATS:
             return _run_validate_format(path, display_path, fmt, profile,

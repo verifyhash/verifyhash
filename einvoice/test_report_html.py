@@ -61,6 +61,7 @@ Asserted (each maps to a task acceptance criterion):
       asserted against the real CLI, not from memory).
 """
 
+import inspect
 import os
 import re
 import subprocess
@@ -78,6 +79,9 @@ from einvoice.remediation import load_catalog  # noqa: E402
 # Reuse the exact fixture + bad-invoice construction the other fast gates use.
 BASE = os.path.join(HERE, "corpus", "xrechnung-testsuite", "src", "test",
                     "business-cases", "standard", "01.01a-INVOICE_ubl.xml")
+#: The shipped worked example: 3 findings at 2 severities (fatal + information)
+#: — the fixture that exposed the FAIL banner's missing bucket.
+BROKEN = os.path.join(HERE, "examples", "01-missing-fields", "broken.xml")
 # The committed multi-finding example the docs and CI recipes use: three
 # findings, all absence-class, all catalogued.
 BROKEN = os.path.join(HERE, "examples", "01-missing-fields", "broken.xml")
@@ -876,6 +880,143 @@ class HtmlFindingPosition(unittest.TestCase):
         self.assertIn("insertion point", doc)
         self.assertNotIn('a<b&"c.xml', doc, "raw path markup reached the HTML")
         self.assertIn("a&lt;b&amp;&quot;c.xml", doc)
+
+
+#: The FAIL banner's counts span, e.g. ``3 findings &middot; 2 fatal &middot;
+#: 1 non-fatal``. Parsed structurally (numbers + labels) rather than matched as
+#: a fixed string, so the assertions below survive a re-wording but NOT a
+#: recurrence of the arithmetic hole.
+_BANNER_RE = re.compile(
+    r'<div class="banner (pass|fail)">.*?'
+    r'<span class="counts">(.*?)</span></div>', re.S)
+_COUNT_RE = re.compile(r"^\s*(\d+)\s+(\S.*?)\s*$")
+
+
+def _parse_banner(doc):
+    """Return ``(verdict, total, [(count, label), ...])`` for the banner.
+
+    ``total`` is the leading ``N finding(s)`` number; the list is every
+    remaining ``N <label>`` segment (the NAMED severity buckets).
+    """
+    m = _BANNER_RE.search(doc)
+    if m is None:
+        raise AssertionError("no banner with a counts span in the document")
+    verdict, counts = m.group(1), m.group(2)
+    segments = [s for s in counts.split("&middot;")]
+    parsed = []
+    for seg in segments:
+        cm = _COUNT_RE.match(seg)
+        if cm is not None:
+            parsed.append((int(cm.group(1)), cm.group(2)))
+    if not parsed:
+        raise AssertionError("banner counts carry no numbers: %r" % counts)
+    total, total_label = parsed[0]
+    if not total_label.startswith("finding"):
+        raise AssertionError(
+            "expected the banner to lead with the finding TOTAL, got %r"
+            % counts)
+    return verdict, total, parsed[1:]
+
+
+class HtmlBannerCountsAddUp(unittest.TestCase):
+    """The FAIL banner must account for EVERY finding it counts.
+
+    Regression for the defect where ``warning_count`` (severity == 'warning'
+    ONLY) was the sole named non-fatal bucket: a finding carried at severity
+    ``information`` — BR-DE-TMP-32 fires exactly that way on the shipped
+    ``examples/01-missing-fields/broken.xml`` — landed in the total and in
+    NEITHER named bucket, so the one artifact that travels to a second person
+    read ``3 findings &middot; 2 fatal &middot; 0 warning``. 2 + 0 != 3, and the
+    recipient of a forwarded report could not account for the third finding.
+
+    These assert the ARITHMETIC, not the wording: the named buckets must sum to
+    the stated total. A future fourth severity therefore cannot silently
+    reopen the hole.
+    """
+
+    def _assert_banner_adds_up(self, doc, expected_total):
+        verdict, total, buckets = _parse_banner(doc)
+        self.assertEqual(verdict, "fail", doc[:400])
+        self.assertEqual(total, expected_total,
+                         "banner total disagrees with the report")
+        self.assertTrue(buckets, "banner names no severity buckets at all")
+        named = sum(c for c, _ in buckets)
+        self.assertEqual(
+            named, total,
+            "banner buckets %r sum to %d but the banner states %d finding(s) "
+            "— every counted finding must land in a NAMED bucket"
+            % (buckets, named, total))
+
+    def _three_severity_report(self):
+        """A report dict carrying fatal + warning + information findings.
+
+        Extended from a real :func:`build_report` result so the record shape is
+        the genuine one; only the severity mix is synthesised, because no
+        shipped fixture fires all three at once (the documented example fires
+        fatal + information).
+        """
+        rep = build_report(BROKEN, profile="xrechnung")
+        template = dict(rep["violations"][0])
+        records = []
+        for rule, severity in (("BR-DE-SYN-FATAL", "fatal"),
+                               ("BR-DE-SYN-WARN", "warning"),
+                               ("BR-DE-SYN-INFO", "information")):
+            rec = dict(template)
+            rec["rule"] = rule
+            rec["severity"] = severity
+            records.append(rec)
+        rep = dict(rep)
+        rep["violations"] = records
+        rep["violation_count"] = len(records)
+        rep["fatal_count"] = 1
+        rep["warning_count"] = 1
+        rep["valid"] = False
+        return rep
+
+    def test_three_severity_report_banner_buckets_sum_to_total(self):
+        rep = self._three_severity_report()
+        doc = build_html(rep)
+        self._assert_banner_adds_up(doc, 3)
+        _, _, buckets = _parse_banner(doc)
+        self.assertIn(1, [c for c, _ in buckets],
+                      "the single fatal must be named: %r" % (buckets,))
+
+    def test_information_only_extra_severity_is_named(self):
+        """The shipped fixture's exact severity mix (fatal + information)."""
+        rep = build_report(BROKEN, profile="xrechnung")
+        severities = [v.get("severity") for v in rep["violations"]]
+        self.assertIn(
+            "information", severities,
+            "fixture drift: %s no longer fires an `information` finding, so "
+            "this regression is no longer exercised end to end" % BROKEN)
+        self._assert_banner_adds_up(build_html(rep), len(severities))
+
+    def test_emitted_document_names_the_third_finding(self):
+        """End to end through the CLI, not just the library projection."""
+        proc = _run(["--profile", "xrechnung", "--format", "html", BROKEN])
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self._assert_banner_adds_up(proc.stdout, 3)
+
+    def test_unknown_future_severity_still_lands_in_a_named_bucket(self):
+        """A severity nobody has invented yet must not fall out of the sum."""
+        rep = self._three_severity_report()
+        rep["violations"][2]["severity"] = "notice-from-the-future"
+        self._assert_banner_adds_up(build_html(rep), 3)
+
+    def test_pass_banner_wording_unchanged(self):
+        """The PASS branch was already self-consistent — pin it as-is."""
+        rep = build_report(BROKEN, profile="xrechnung")
+        rep = dict(rep)
+        rep["valid"] = True
+        rep["fatal_count"] = 0
+        doc = build_html(rep)
+        self.assertIn("banner pass", doc)
+        self.assertIn("3 non-fatal findings (warnings do not invalidate)", doc)
+
+    def test_build_html_takes_exactly_one_argument(self):
+        """The browser validator calls ``build_html(_rep)`` — one argument."""
+        sig = inspect.signature(build_html)
+        self.assertEqual(list(sig.parameters), ["report"])
 
 
 class HtmlBaselineRejected(unittest.TestCase):

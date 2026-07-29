@@ -2339,8 +2339,12 @@ def build_html(report):
 
     Layout:
       * a pass/fail banner ("Conformant" vs "N finding(s)") built from the same
-        summary fields (``valid``/``fatal_count``/``warning_count``/
-        ``violation_count``) the JSON path exposes;
+        summary fields (``valid``/``fatal_count``/``violation_count``) the JSON
+        path exposes. The FAIL banner splits the total into ``fatal`` and
+        ``non-fatal`` — total-minus-fatal, NOT ``warning_count`` — so the named
+        buckets always SUM to the stated total even for severities outside
+        ``warning`` (``information``, as BR-DE-TMP-32 fires), and so the
+        wording matches the CLI summary line's `non-fatal` vocabulary;
       * one card per violation carrying the rule id, a severity pill, the
         remediation ``title``, the violation ``message`` (with the finding's
         position appended when there is one — ``at file:line`` for an
@@ -2401,7 +2405,6 @@ def build_html(report):
         violations = report.get("violations", [])
         valid = report.get("valid")
         fatal_count = report.get("fatal_count", 0)
-        warning_count = report.get("warning_count", 0)
         violation_count = report.get("violation_count", len(violations))
 
         if valid:
@@ -2412,9 +2415,21 @@ def build_html(report):
             parts.append('<div class="banner pass">Conformant'
                          '<span class="counts">%s</span></div>' % _h(note))
         else:
-            counts = ("%d finding%s &middot; %d fatal &middot; %d warning"
+            # The named buckets MUST sum to the stated total. `warning_count`
+            # counts ONLY severity == 'warning', so a finding carried at any
+            # other non-fatal severity (`information`, as BR-DE-TMP-32 is) fell
+            # into the total and into NEITHER named bucket — the forwarded
+            # document then read `3 findings · 2 fatal · 0 warning`, and the
+            # recipient could not account for one of the findings it claimed.
+            # Deriving the second bucket as total-minus-fatal closes the hole
+            # for EVERY present and future severity, and reuses the CLI summary
+            # line's existing `non-fatal` vocabulary (report.py:825,
+            # "%d finding(s) total: %d fatal, %d non-fatal") rather than
+            # inventing a third phrasing for the same three buckets.
+            non_fatal_count = max(0, violation_count - fatal_count)
+            counts = ("%d finding%s &middot; %d fatal &middot; %d non-fatal"
                       % (violation_count, "" if violation_count == 1 else "s",
-                         fatal_count, warning_count))
+                         fatal_count, non_fatal_count))
             parts.append('<div class="banner fail">Not conformant'
                          '<span class="counts">%s</span></div>' % counts)
 

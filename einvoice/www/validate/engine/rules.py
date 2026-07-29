@@ -46,9 +46,20 @@ from .codelists import (
 # stamped (see einvoice._xmlsec / the ``*_line`` model fields). It defaults to
 # None so EVERY existing 3-/4-arg construction site keeps working unchanged, and
 # an absence rule (or any rule without a proven element position) leaves it None.
+# ``insertion_point_line`` is the OPTIONAL 1-based parser line of the deepest
+# element of the finding's path that the document ACTUALLY contains — i.e. where
+# the missing thing would have to be inserted. It is NOT the site of an error
+# (nothing is wrong on that line); it is the anchor for an absence. No rule
+# constructs it: it is stamped ONCE, after evaluation, by
+# ``validate._stamp_insertion_points`` (the only place the parsed tree and the
+# finding list are both in scope), so the ~300 rule construction sites are
+# untouched. It is MUTUALLY EXCLUSIVE with ``source_line``: a finding that
+# already names a concrete offending element never gains an insertion point.
 Violation = namedtuple(
-    "Violation", ["rule_id", "message", "element", "severity", "source_line"])
-Violation.__new__.__defaults__ = ("fatal", None)
+    "Violation",
+    ["rule_id", "message", "element", "severity", "source_line",
+     "insertion_point_line"])
+Violation.__new__.__defaults__ = ("fatal", None, None)
 
 # UNTDID 1001 invoice type codes accepted by EN 16931 for an Invoice document
 # (presence-in-list check only; the XRechnung-restricted subset is deferred).

@@ -58,7 +58,21 @@ from decimal import Decimal, ROUND_FLOOR, InvalidOperation
 
 from .codelists import KOSIT_CEF_EAS_CODES
 
-Violation = namedtuple("Violation", ["rule_id", "message", "element", "severity"])
+# Mirrors :data:`einvoice.rules.Violation` field-for-field (it is a separate
+# namedtuple only because this module must not import the core rule engine).
+# ``source_line`` and ``insertion_point_line`` are the two OPTIONAL position
+# fields; no BR-DE-*/PEPPOL rule sets either one — the four-argument
+# construction below is the only one in this module and in
+# :mod:`einvoice.rules_peppol`, which reuses this type. They exist so the single
+# post-pass in :func:`einvoice.validate._stamp_insertion_points` can ``_replace``
+# an anchor onto a national finding exactly as it does onto a core one, instead
+# of the German CIUS layer being the one family that silently cannot carry a
+# position.
+Violation = namedtuple(
+    "Violation",
+    ["rule_id", "message", "element", "severity", "source_line",
+     "insertion_point_line"])
+Violation.__new__.__defaults__ = ("fatal", None, None)
 
 # UBL namespaces (same as einvoice.parser).
 NS_INVOICE = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"

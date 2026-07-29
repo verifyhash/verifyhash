@@ -73,6 +73,7 @@ import hashlib
 import html
 import json
 import os
+import re
 import sys
 from collections import Counter
 from xml.sax.saxutils import escape, quoteattr
@@ -210,6 +211,16 @@ REPORT_SCHEMA = {
                        "not attributable to a source position (an "
                        "absence/document-level rule). Distinct from the "
                        "catalog XML-path hint 'location'.",
+        "insertion_point_line": "OPTIONAL, additive: the 1-based parser line "
+                                "of the DEEPEST element of the finding's path "
+                                "that the document actually contains — i.e. "
+                                "WHERE THE MISSING THING SHOULD GO. It is NOT "
+                                "the site of an error: nothing on that line is "
+                                "wrong. Present only for an absence finding "
+                                "whose path anchors unambiguously; mutually "
+                                "exclusive with 'source_line' (a finding never "
+                                "carries both), and absent — never 0, never "
+                                "the document root — when nothing resolves.",
     },
     "exit_codes": {
         "0": "no fatal violations (valid).",
@@ -292,6 +303,19 @@ def _record(v, catalog=None):
     source_line = getattr(v, "source_line", None)
     if source_line is not None:
         record["source_line"] = source_line
+    # Additive, OPTIONAL, and MUTUALLY EXCLUSIVE with `source_line`: the 1-based
+    # line of the deepest element of the finding's path that the document
+    # actually contains — the INSERTION POINT for what is missing, not a place
+    # where anything is wrong. Stamped once by
+    # einvoice.validate._stamp_insertion_points, which carries nothing rather
+    # than guessing (no root fallback, no 0, no ambiguous repeated parent).
+    # Emitted here in exactly the same present-only-when-known form as
+    # validate.Result._violation_dict, so the two JSON surfaces cannot diverge
+    # (test_json_surface_parity.py measures that). Appended last: a consumer
+    # that ignores it reads a byte-identical record.
+    insertion_point_line = getattr(v, "insertion_point_line", None)
+    if insertion_point_line is not None:
+        record["insertion_point_line"] = insertion_point_line
     return record
 
 
@@ -618,12 +642,302 @@ def batch_exit_code(batch):
     return EXIT_OK
 
 
+#: How many rule ids ONE capped human batch listing may name before it
+#: truncates. Used by BOTH human listings ``build_batch_text`` renders (the
+#: per-file findings and the 'most violated rules' aggregate) so there is a
+#: single budget and a single truncation sentence, never a second convention.
+#:
+#: WHY 11 AND NOT 10. This is the batch twin of the single-file human cap
+#: ``einvoice.cli._NON_FATAL_LIST_CAP`` (= 10), and it is deliberately ONE MORE,
+#: because the two surfaces count differently and the READER should see the same
+#: number of rule ids either way: the single-file report renders its headline
+#: finding in full (rule id, message, offending element, fix hint, rule page)
+#: and then lists ``_NON_FATAL_LIST_CAP`` FURTHER findings — 1 + 10 = 11 rule ids
+#: on screen before it says "... N more not shown". A batch file line carries
+#: counts, not a headline rule, so this listing names 11 directly.
+#:
+#: ``report.py`` must NOT import ``einvoice.cli`` (cli imports report; that would
+#: be an import cycle), so the relationship is documented here rather than
+#: computed — and it is PINNED by test_finding_set_parity.py, which reads the
+#: CLI's cap out of the installed module and requires a truncated batch listing
+#: to name exactly ``cap + 1`` ids with the single-file disclosure wording.
+_BATCH_RULE_LIST_CAP = 11
+
+#: Ordering rank for the human batch listings: what blocks conformance first.
+#: Anything unknown sorts after the three documented severities rather than
+#: raising, so a future severity degrades to "listed last", never to a crash.
+_BATCH_SEVERITY_RANK = {"fatal": 0, "warning": 1, "information": 2}
+
+
+def _position_suffix(source, source_line):
+    """The ONE ``file:line`` fragment every HUMAN surface appends to a finding.
+
+    MEASURED defect this closes (T-VHLOC.3, 2026-07-26): the engine has stamped
+    ``source_line`` on attributable findings since T-VHDIAG.1, and ``json``,
+    ``sarif`` (``region.startLine``), ``github`` (``line=``), ``azure``
+    (``linenumber=``) and ``gitlab`` (``location.lines.begin``) all render it —
+    but the two surfaces a PERSON reads, the text report and the JUnit
+    ``<failure>`` body, dropped it. They handed over an XPath, which is a
+    structural address: it tells an ERP developer WHICH element is wrong and
+    gives their editor nothing to jump to. ``file:line`` is the shape every
+    terminal and editor already linkifies (it is the gcc/pytest convention), so
+    it is the one used here.
+
+    HONESTY RULE (the same one ``test_report_location.py`` already proves for
+    the machine surfaces, not a second convention): a position is emitted ONLY
+    when the record really carries a usable 1-based line. No placeholder, no
+    ``:0``, no ``:1`` fallback — a finding without a line reads EXACTLY as it
+    did before, because an invented line number is worse than none (it sends
+    the reader to the wrong element and quietly discredits the tool).
+
+    ``source_line`` is validated here rather than trusted: the same bool/int
+    ``>= 1`` check :func:`build_sarif` applies, so a hand-edited or
+    third-party report dict carrying ``true`` or ``0`` degrades to "no
+    position" instead of printing nonsense.
+
+    :param source: the document path the finding belongs to (``report['source']``
+        / the CLI's display path). Falsy -> the bare ``line N`` form, because
+        ``:8`` on its own is not a jumpable address and inventing a filename
+        would be a fabrication.
+    :param source_line: the record's optional ``source_line``.
+    :returns: ``" at <source>:<line>"``, ``" at line <line>"``, or ``""``.
+    """
+    if (not isinstance(source_line, int) or isinstance(source_line, bool)
+            or source_line < 1):
+        return ""
+    if not source:
+        return " at line %d" % source_line
+    return " at %s:%d" % (source, source_line)
+
+
+def _insertion_point_suffix(source, insertion_point_line):
+    """The ``insertion point`` fragment every HUMAN surface appends to an
+    ABSENCE finding — the sibling of :func:`_position_suffix`, never a mode of
+    it.
+
+    MEASURED defect this closes (T-VHLOC.6, 2026-07-26): the engine has stamped
+    ``insertion_point_line`` on anchorable absence findings since T-VHLOC.4, and
+    the two JSON surfaces carry it — but on the ONE example our own onboarding
+    docs tell a stranger to run,
+    ``examples/01-missing-fields/broken.xml``, EVERY surface a person reads
+    (text report, batch listing, JUnit ``<failure>`` body) said only "BG-6 is
+    missing" and left them to find the spot in a 60-line invoice by hand. The
+    field existed; the payoff did not.
+
+    THE HONESTY RULE, AND WHY IT NEEDS ITS OWN WORDING. An insertion point is
+    where the missing thing GOES; nothing on that line is wrong. Rendering it
+    through :func:`_position_suffix` would print ``at broken.xml:28`` — which
+    every reader (and every editor jumping there) reads as "the error is on line
+    28", pointing at an innocent ``<cac:Party>``. So the token is deliberately
+    a DIFFERENT shape and carries the word "insertion" literally:
+
+        BR-DE-2: The group 'SELLER CONTACT' (BG-6) must be transmitted.
+          (insertion point examples/01-missing-fields/broken.xml:28)
+
+    The vocabulary is the one the engine already uses
+    (``einvoice.validate._insertion_point_line`` / ``_stamp_insertion_points``),
+    not a third term. ``test_report_location.py`` pins the substring
+    "insertion", so the distinction is mechanically checkable and cannot be
+    quietly collapsed back into the ``at file:line`` shape.
+
+    PRECEDENCE. ``source_line`` and ``insertion_point_line`` are documented
+    mutually exclusive (see :data:`REPORT_SCHEMA`) and the engine never stamps
+    both. A hand-edited or third-party report dict that carries both is not a
+    crash: every call site asks for ``_position_suffix(...) or
+    _insertion_point_suffix(...)``, so a proven error site always wins over a
+    guessed-at destination.
+
+    ``insertion_point_line`` is validated here rather than trusted — the same
+    bool/int ``>= 1`` check :func:`_position_suffix` and :func:`build_sarif`
+    apply — so ``true``, ``0`` or a string degrades to "no position" instead of
+    printing nonsense. No placeholder, no ``:0``, no ``:1`` fallback: a finding
+    without an anchor reads EXACTLY as it did before.
+
+    :param source: the document path the finding belongs to. Falsy -> the bare
+        ``insertion point line N`` form, for the same reason
+        :func:`_position_suffix` degrades that way.
+    :param insertion_point_line: the record's optional ``insertion_point_line``.
+    :returns: ``" (insertion point <source>:<line>)"``,
+        ``" (insertion point line <line>)"``, or ``""``.
+    """
+    if (not isinstance(insertion_point_line, int)
+            or isinstance(insertion_point_line, bool)
+            or insertion_point_line < 1):
+        return ""
+    if not source:
+        return " (insertion point line %d)" % insertion_point_line
+    return " (insertion point %s:%d)" % (source, insertion_point_line)
+
+
+def _rule_sort_key(rule_id):
+    """Natural sort key for a rule id, so BR-DE-2 sorts BEFORE BR-DE-15.
+
+    Plain lexicographic ordering puts 'BR-DE-15' before 'BR-DE-2', which reads
+    as a bug in a printed list. Splitting on digit runs and comparing the
+    numeric runs as integers fixes that. Every element is an ``(int, str)``
+    pair — numeric runs are ``(n, "")`` and literal runs ``(-1, text)`` — so the
+    tuples always compare against each other without a type error.
+    """
+    parts = re.split(r"(\d+)", rule_id)
+    return tuple((int(p), "") if p.isdigit() else (-1, p)
+                 for p in parts if p != "")
+
+
+def _batch_finding_sort_key(v):
+    """Deterministic order for one file's findings: fatals first, then rule id."""
+    return (_BATCH_SEVERITY_RANK.get(v.get("severity", ""),
+                                     len(_BATCH_SEVERITY_RANK)),
+            _rule_sort_key(v.get("rule", "")),
+            v.get("rule", ""))
+
+
+def _batch_truncation_sentence(omitted, total):
+    """The ONE truncation wording every capped listing in this module uses.
+
+    Byte-identical to the single-file report's (einvoice/cli.py, PASS and FAIL
+    paths alike): say how many entries were hidden, and name the format that
+    carries all of them. ``total`` is the FULL population, not the hidden
+    remainder, so the number agrees with the count printed above the listing.
+    ``--format json`` is a real batch format (``BATCH_FORMATS``), so the advice
+    is executable on a directory, not just on a single file.
+    """
+    return ("... %d more not shown — use --format json for all %d"
+            % (omitted, total))
+
+
+def _batch_file_finding_lines(report):
+    """The indented finding block under ONE file's status line.
+
+    Same shape as the single-file human report after T-VHFULL.1: an explicit
+    "N finding(s) total" line, then one ``[severity] RULE-ID: message`` line per
+    finding up to :data:`_BATCH_RULE_LIST_CAP`, then the honest truncation
+    sentence. A file with no findings gets no block at all (a clean PASS stays
+    the one line it has always been); a file that PASSED but carries advisory
+    findings DOES get one — examples/01-missing-fields/fixed.xml is conformant
+    yet still reports BR-DE-TMP-32, and hiding that was half the reason the
+    batch summary was unusable for triage.
+    """
+    violations = report.get("violations") or []
+    if not violations:
+        return []
+    total = len(violations)
+    fatal = sum(1 for v in violations if v.get("severity") == "fatal")
+    lines = ["  %d finding(s) total: %d fatal, %d non-fatal "
+             "(--format json carries every field of each)"
+             % (total, fatal, total - fatal)]
+    ordered = sorted(violations, key=_batch_finding_sort_key)
+    src = report.get("source", "")
+    for v in ordered[:_BATCH_RULE_LIST_CAP]:
+        # ``file:line`` when this finding is attributable, the distinctly
+        # labelled insertion point when it is an anchorable ABSENCE instead
+        # (T-VHLOC.6), nothing at all otherwise (T-VHLOC.3) — one convention,
+        # see :func:`_position_suffix` / :func:`_insertion_point_suffix`. A
+        # proven error site wins if a hand-edited record claims both.
+        lines.append("    [%s] %s: %s%s"
+                     % (v.get("severity", ""), v.get("rule", ""),
+                        v.get("message", ""),
+                        _position_suffix(src, v.get("source_line"))
+                        or _insertion_point_suffix(
+                            src, v.get("insertion_point_line"))))
+    if total > _BATCH_RULE_LIST_CAP:
+        lines.append("    " + _batch_truncation_sentence(
+            total - _BATCH_RULE_LIST_CAP, total))
+    return lines
+
+
+def _batch_rule_frequency(batch):
+    """``(ordered_rule_ids, files_per_rule)`` across the whole batch.
+
+    The question a person pointing this at a directory of ERP exports is
+    actually asking is "which rule is breaking my export?", so rules are counted
+    by HOW MANY FILES they hit (a rule that fires twice in one invoice is one
+    broken file, not two). Order: most files first, then fatal before warning
+    before information, then natural rule id — fully deterministic, and for a
+    single-file batch identical to that file's own listing order, so the two
+    sections never disagree about which rules they showed.
+    """
+    files_per_rule = {}
+    rank_of_rule = {}
+    for r in batch.get("files", []):
+        seen = set()
+        for v in r.get("violations") or []:
+            rid = v.get("rule", "")
+            rank = _BATCH_SEVERITY_RANK.get(v.get("severity", ""),
+                                            len(_BATCH_SEVERITY_RANK))
+            rank_of_rule[rid] = min(rank_of_rule.get(rid, rank), rank)
+            if rid not in seen:
+                seen.add(rid)
+                files_per_rule[rid] = files_per_rule.get(rid, 0) + 1
+    ordered = sorted(files_per_rule,
+                     key=lambda rid: (-files_per_rule[rid], rank_of_rule[rid],
+                                      _rule_sort_key(rid), rid))
+    return ordered, files_per_rule
+
+
+def _batch_aggregate_lines(ordered, files_per_rule):
+    """The 'most violated rules' block: rule id + how many files it broke."""
+    if not ordered:
+        return []
+    shown = ordered[:_BATCH_RULE_LIST_CAP]
+    width = max(len(rid) for rid in shown)
+    lines = ["", "Most violated rules (rule id, files affected):"]
+    for rid in shown:
+        n = files_per_rule[rid]
+        lines.append("  %-*s  %d file%s"
+                     % (width, rid, n, "" if n == 1 else "s"))
+    if len(ordered) > _BATCH_RULE_LIST_CAP:
+        lines.append("  " + _batch_truncation_sentence(
+            len(ordered) - _BATCH_RULE_LIST_CAP, len(ordered)))
+    return lines
+
+
+def _batch_explain_hint(ordered, rank_lookup):
+    """The ONE ``einvoice --explain <RULE-ID>`` line for the whole run, or None.
+
+    The id is always taken from a rule THIS run actually violated — never a
+    hard-coded example — and always from a rule the output just printed, so the
+    reader can see where it came from. Choice: the first FATAL among the shown
+    rules (i.e. most files affected, ties broken by rule id), falling back to
+    the most-affecting rule of any severity when the shown block holds no fatal.
+    """
+    shown = ordered[:_BATCH_RULE_LIST_CAP]
+    if not shown:
+        return None
+    for rid in shown:
+        if rank_lookup(rid) == "fatal":
+            return rid
+    return shown[0]
+
+
 def build_batch_text(batch):
     """Render a batch report as a concise, human-readable text summary.
 
-    One status line per file (``PASS`` / ``FAIL`` / ``ERROR``) followed by an
-    aggregate tally line. An empty directory prints a single 'no invoice files
-    found' line. Pure projection of the batch dict — no rule logic.
+    Per file: a status line (``PASS`` / ``FAIL`` / ``ERROR``) and, when that
+    file has findings, the rule ids behind its counts (capped by
+    :data:`_BATCH_RULE_LIST_CAP`, with an honest truncation sentence). Then the
+    aggregate tally line, a 'most violated rules' block, and ONE
+    ``einvoice --explain <RULE-ID>`` line naming a rule this run really
+    violated. An empty directory prints a single 'no invoice files found' line.
+
+    Pure projection of the batch dict — no rule logic, no re-aggregation of
+    anything the batch engine did not already compute.
+
+    MEASURED defect this closes (T-VHUX2.4, 2026-07-25): over
+    ``examples/01-missing-fields`` this printed
+    ``FAIL  broken.xml  2 fatal, 0 warning`` and named ZERO rule ids, while the
+    very dict it was handed already carried BR-DE-2, BR-DE-15 and
+    BR-DE-TMP-32. A directory of exported invoices is exactly how an ERP
+    developer evaluates a validator, and this was the only command at that
+    scale — so every remediation asset the product has (``--explain``, the fix
+    hints, the 297 rule pages) was unreachable from it and the only route to a
+    rule id was re-running the tool file by file.
+
+    Unchanged on purpose: the ERROR line form, the 'no invoice files found'
+    line, the totals line and its position at the end of the tally, and the
+    fact that ``--quiet`` renders none of this (the CLI simply does not call
+    here). Every line added by this function is either indented or a labelled
+    block after the totals line, so ``grep '^FAIL'`` / ``grep '^PASS'`` over a
+    batch keeps meaning "one match per file".
     """
     root = batch.get("root", "")
     file_count = batch.get("file_count", 0)
@@ -634,8 +948,11 @@ def build_batch_text(batch):
     for r in batch.get("files", []):
         src = r.get("source", "")
         if r.get("error"):
+            # An errored file was never parsed, so it has no findings to name;
+            # its line form is contractual and stays exactly as it was.
             lines.append("ERROR %s  %s" % (src, r.get("error")))
-        elif r.get("fatal_count", 0) > 0:
+            continue
+        if r.get("fatal_count", 0) > 0:
             lines.append("FAIL  %s  %d fatal, %d warning"
                          % (src, r.get("fatal_count", 0),
                             r.get("warning_count", 0)))
@@ -644,6 +961,7 @@ def build_batch_text(batch):
             tail = (" (%d warning%s)" % (wc, "" if wc == 1 else "s")
                     if wc else "")
             lines.append("PASS  %s  conformant%s" % (src, tail))
+        lines.extend(_batch_file_finding_lines(r))
 
     failed = batch.get("failed_file_count", 0)
     passed = file_count - failed
@@ -653,6 +971,21 @@ def build_batch_text(batch):
         "(%d fatal, %d warning across all files)"
         % (file_count, "" if file_count == 1 else "s", passed, failed,
            batch.get("fatal_count", 0), batch.get("warning_count", 0)))
+
+    ordered, files_per_rule = _batch_rule_frequency(batch)
+    lines.extend(_batch_aggregate_lines(ordered, files_per_rule))
+
+    severity_of = {}
+    for r in batch.get("files", []):
+        for v in r.get("violations") or []:
+            rid = v.get("rule", "")
+            sev = v.get("severity", "")
+            if rid not in severity_of or sev == "fatal":
+                severity_of[rid] = sev
+    hint = _batch_explain_hint(ordered, lambda rid: severity_of.get(rid, ""))
+    if hint:
+        lines.append("")
+        lines.append("Explain any rule above: einvoice --explain %s" % hint)
     return "\n".join(lines) + "\n"
 
 
@@ -677,9 +1010,16 @@ def build_text(report):
     lines = [head]
     for v in report.get("violations", []):
         field = v.get("field")
-        lines.append("  [%s] %s: %s%s" % (
+        # The XPath says WHICH element; the position says WHERE it is — either
+        # the proven error site (``at file:line``, T-VHLOC.3) or, for an
+        # anchorable absence, the distinctly worded insertion point where the
+        # missing thing GOES (T-VHLOC.6). A finding the engine could not place
+        # at all keeps its historic bytes exactly.
+        lines.append("  [%s] %s: %s%s%s" % (
             v.get("severity", ""), v.get("rule", ""), v.get("message", ""),
-            " (%s)" % field if field else ""))
+            " (%s)" % field if field else "",
+            _position_suffix(src, v.get("source_line"))
+            or _insertion_point_suffix(src, v.get("insertion_point_line"))))
     return "\n".join(lines) + "\n"
 
 
@@ -943,16 +1283,30 @@ def _junit_suite_block(report, suite_name=None):
         tests = len(violations)
         failures = report.get("fatal_count", 0)
         errors = 0
+        src = report.get("source", "")
         for v in violations:
             rule = v.get("rule") or ""
             severity = v.get("severity") or "fatal"
             message = v.get("message") or ""
             field = v.get("field") or ""
+            # The <failure> body is what a CI test pane shows a human when the
+            # build goes red, so it carries the ``file:line`` position whenever
+            # the finding is attributable (T-VHLOC.3) and the distinctly
+            # labelled ``(insertion point file:line)`` when it is an anchorable
+            # absence (T-VHLOC.6), and is byte-identical to before when it is
+            # neither. This is the HUMAN body only — the surrounding testcase
+            # attributes and the machine CI formats are untouched, because an
+            # annotation anchored to an insertion point would draw a red
+            # squiggle on an innocent line.
+            position = (_position_suffix(src, v.get("source_line"))
+                        or _insertion_point_suffix(
+                            src, v.get("insertion_point_line")))
             lines.append(
                 "    <testcase name=%s classname=%s>"
                 % (quoteattr(rule), classname))
             if severity == "fatal":
                 body = "%s: %s" % (severity, field) if field else severity
+                body += position
                 lines.append(
                     "      <failure message=%s>%s</failure>"
                     % (quoteattr(message), escape(body)))
@@ -960,6 +1314,12 @@ def _junit_suite_block(report, suite_name=None):
                 note = "%s: %s" % (severity, message)
                 if field:
                     note = "%s (%s)" % (note, field)
+                # Same convention on the advisory <system-out> note: a reader
+                # triaging a warning needs the position just as much. No rule
+                # ships a non-fatal attributable finding TODAY (the three
+                # line-bearing code-list rules are all fatal), so this arm is
+                # forward-consistency, not a rendered change.
+                note += position
                 lines.append("      <system-out>%s</system-out>" % escape(note))
             lines.append("    </testcase>")
 
@@ -1059,9 +1419,32 @@ SARIF_SCHEMA_URI = (
 #: ``https://verifyhash.com/einvoice`` + ``/rules/<id>/``, trailing slash). It
 #: is duplicated here as a plain string constant rather than imported because
 #: ``gen_site`` is a build script, not a runtime import; a static test pins the
-#: two forms together. Used only for a SARIF ``reportingDescriptor.helpUri``
-#: deep-link — no network is ever touched.
+#: two forms together. It is the ONE origin for every rule-page deep-link the
+#: product emits — the SARIF ``reportingDescriptor.helpUri``, the default text
+#: report's ``rule page:`` line and the HTML report's rule-id anchor all go
+#: through :func:`rule_page_url` below. The historical ``SARIF_`` prefix is kept
+#: because ``test_report_sarif.py`` and the published CHANGELOG name it; the
+#: constant is format-neutral in fact. No network is ever touched.
 SARIF_RULE_HELP_BASE_URL = "https://verifyhash.com/einvoice/rules/"
+
+
+def rule_page_url(rule_id):
+    """Return the canonical public reference-page URL for ``rule_id``.
+
+    THE single URL-building code path for the whole package: base constant +
+    id + trailing slash, exactly the shape ``gen_site.py``'s ``_url_rule``
+    generates on disk (``https://verifyhash.com/einvoice/rules/BR-DE-2/``).
+    Every emitter that deep-links a rule calls this, so the CLI text report,
+    the SARIF ``helpUri``, the HTML anchor and the published site are
+    structurally incapable of disagreeing.
+
+    The URL is ABSOLUTE on purpose: the HTML artifact is read from a local
+    file (a CI download, an email attachment), where a relative link dangles.
+
+    Callers are responsible for the "does a page exist?" gate — see
+    :func:`_remediation_catalog`; this function only spells the URL.
+    """
+    return SARIF_RULE_HELP_BASE_URL + rule_id + "/"
 
 #: SARIF result level for each report severity (fatal -> error, warning ->
 #: warning, everything else -> note). Static Analysis Results Interchange
@@ -1104,6 +1487,67 @@ def _sarif_fingerprint(rule_id, loc_name):
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+#: Characters that may appear LITERALLY in the path part of a URI reference
+#: (RFC 3986 ``path-noscheme`` / ``path-absolute``): ``unreserved`` (ALPHA,
+#: DIGIT, ``-``, ``.``, ``_``, ``~``), ``sub-delims`` (``!$&'()*+,;=``), plus
+#: ``:`` and ``@`` — both are ``pchar`` — and ``/``, the segment separator.
+#: EVERY other byte is illegal there and MUST be percent-encoded: the space,
+#: ``"``, ``<``, ``>``, ``\``, ``^``, ``` ` ```, ``{``, ``|``, ``}``, ``[``,
+#: ``]``, the delimiters ``#`` and ``?`` (they would start a fragment/query),
+#: ``%`` itself (so an existing escape is not re-read as one), C0 controls and
+#: every non-ASCII byte.
+_URI_PATH_SAFE = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz"
+    "0123456789"
+    "-._~"          # unreserved
+    "!$&'()*+,;="   # sub-delims
+    ":@"            # the remaining pchar members
+    "/"             # segment separator
+)
+
+
+def _sarif_artifact_uri(source):
+    """Turn the caller's argv path into a SARIF ``artifactLocation.uri``.
+
+    The PATH-ECHO RULE (measured, pinned by ``test_path_invariance.py`` and
+    documented in REPORT-FORMATS.md "Path echo") says every surface repeats the
+    path EXACTLY as it arrived on argv — nothing is absolutized, resolved or
+    rewritten — so this helper deliberately calls no ``abspath``/``realpath``/
+    ``relpath``. ``report["source"]`` already carries that argv string; the only
+    two transformations applied are the ones a *URI* demands:
+
+      1. separator shape — on a platform whose ``os.sep`` is not ``/``
+         (Windows) the separators become ``/``, because a SARIF ``uri`` is a
+         URI reference, not a native path. On POSIX ``os.sep`` IS ``/``, so a
+         literal backslash in a filename is just another character and is
+         percent-encoded (``%5C``) rather than turned into a separator;
+      2. percent-encoding — every character outside :data:`_URI_PATH_SAFE` is
+         replaced by ``%XX`` per UTF-8 byte. ``invoices/Q1 2026.xml`` becomes
+         ``invoices/Q1%202026.xml``; ``Rechnung_Müller.xml`` becomes
+         ``Rechnung_M%C3%BCller.xml``. Characters that are legal in a URI
+         reference — ``&``, ``'``, ``(``, ``)``, ``+``, ``,``, ``;``, ``=``,
+         ``:``, ``@`` — are left ALONE, so the common case stays readable.
+
+    Percent-decoding the result reproduces the argv string byte for byte, which
+    is what ``test_path_invariance.py`` / ``test_filename_robustness.py`` pin.
+
+    :param source: the report ``source`` field (the argv path string).
+    :returns: a URI reference (``str``); ``""`` when ``source`` is empty.
+    """
+    if not source:
+        return ""
+    if os.sep != "/":
+        source = source.replace(os.sep, "/")
+    out = []
+    for ch in source:
+        if ch in _URI_PATH_SAFE:
+            out.append(ch)
+        else:
+            out.extend("%%%02X" % byte for byte in ch.encode("utf-8"))
+    return "".join(out)
+
+
 def build_sarif(report):
     """Project a report dict (from :func:`build_report`) into a SARIF 2.1.0 dict.
 
@@ -1132,7 +1576,34 @@ def build_sarif(report):
         ``ruleId`` = the rule id, ``level`` per :func:`_sarif_level`,
         ``message.text`` = the violation message (falling back to the catalog
         title), and — when a field/location is present — a ``locations`` entry
-        carrying a ``logicalLocations`` member.
+        carrying BOTH a ``logicalLocations`` member (the offending element
+        name) and a ``physicalLocation`` (see below).
+
+    PHYSICAL LOCATION — why it exists. GitHub code scanning draws an inline
+    pull-request annotation from ``physicalLocation.artifactLocation.uri`` plus
+    ``region.startLine``; a result that carries only ``logicalLocations``
+    uploads successfully and shows up NOWHERE on the diff. So each location
+    object also gets:
+
+      * ``physicalLocation.artifactLocation.uri`` = the validated invoice path
+        as the caller spelled it on argv (``report["source"]``), passed through
+        :func:`_sarif_artifact_uri` — forward slashes, percent-encoded where a
+        character is illegal in a URI reference, never absolutized (the
+        path-echo rule). Omitted only when the report carries no ``source`` at
+        all, which no :func:`build_report` output ever does — there is then no
+        artifact to name, and the ``logicalLocations`` member stands alone;
+      * ``physicalLocation.region.startLine`` = the 1-based ``source_line``
+        the violation record carries when the finding is attributable to a
+        concrete element. An absence/document-level finding (BR-16, "an Invoice
+        shall have at least one Invoice line") has no attributable line, so it
+        gets the ``artifactLocation`` and NO ``region`` — never a guessed line
+        1, never a ``startLine`` of 0. This mirrors :func:`build_github`
+        omitting ``line=`` and :func:`build_gitlab` omitting ``location.lines``.
+
+    ``partialFingerprints`` stays line-INDEPENDENT (:func:`_sarif_fingerprint`
+    hashes rule id + logical location only), so an edit that shifts a violation
+    to a different line still de-duplicates against the previous run even
+    though its ``startLine`` moved.
 
     A not-well-formed input (``report`` has an ``error``) yields a single result
     whose ``ruleId`` is the error code, ``level`` ``error`` and ``message.text``
@@ -1154,6 +1625,11 @@ def build_sarif(report):
     # document is still produced in full and stays valid. A packaging slip must
     # never turn the Action's DEFAULT ``format: sarif`` into a traceback.
     catalog_ids = _remediation_catalog()
+
+    # The argv path, URI-shaped once for every result (see
+    # :func:`_sarif_artifact_uri`). Empty only for a hand-built report dict
+    # with no ``source`` — build_report always sets one.
+    artifact_uri = _sarif_artifact_uri(report.get("source") or "")
 
     if report.get("error"):
         # Not-well-formed XML: a single error result, no rule metadata — the
@@ -1198,8 +1674,7 @@ def build_sarif(report):
                 # ONLY for a real catalog rule id (that is where a page exists);
                 # a synthetic/unknown id gets no helpUri.
                 if rule_id in catalog_ids:
-                    descriptor["helpUri"] = (
-                        SARIF_RULE_HELP_BASE_URL + rule_id + "/")
+                    descriptor["helpUri"] = rule_page_url(rule_id)
                 rules.append(descriptor)
 
             loc_name = field or location
@@ -1214,16 +1689,32 @@ def build_sarif(report):
                         rule_id, loc_name),
                 },
             }
-            # Attach a logical location when we know WHERE the finding is;
-            # omit ``locations`` entirely when neither field nor location hint
-            # is present (an empty locations array is not useful).
+            # Attach a location when we know WHERE the finding is; omit
+            # ``locations`` entirely when neither field nor location hint is
+            # present (an empty locations array is not useful).
             if loc_name:
-                result["locations"] = [{
+                loc = {
                     "logicalLocations": [{
                         "name": loc_name,
                         "kind": "member",
                     }],
-                }]
+                }
+                # The PHYSICAL half — what GitHub turns into an inline PR
+                # annotation. The artifact is the invoice the caller named;
+                # the region is emitted ONLY for a finding the parser could
+                # attribute to a concrete 1-based source line (never a guessed
+                # line 1, never 0). ``source_line`` is validated here rather
+                # than trusted: a bool is not a line number, and SARIF
+                # ``region.startLine`` must be >= 1.
+                if artifact_uri:
+                    physical = {"artifactLocation": {"uri": artifact_uri}}
+                    source_line = v.get("source_line")
+                    if (isinstance(source_line, int)
+                            and not isinstance(source_line, bool)
+                            and source_line >= 1):
+                        physical["region"] = {"startLine": source_line}
+                    loc["physicalLocation"] = physical
+                result["locations"] = [loc]
             results.append(result)
 
     return {
@@ -1753,6 +2244,10 @@ h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
 .finding h2 { font-size: 1.05rem; margin: 0 0 .5rem;
   display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
 .rule-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+a.rule-id { color: #0a4a7a; text-decoration-color: #9fc4de; }
+.note { color: #57606a; font-size: .85rem; margin: 1.25rem 0 0; }
+.note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #eaeef2; border-radius: 4px; padding: .05rem .3rem; }
 .sev { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
   padding: .1rem .5rem; border-radius: 999px; font-weight: 700; }
 .sev.fatal { background: #fce8e6; color: #7a1f16; }
@@ -1760,6 +2255,8 @@ h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
 .sev.information { background: #ddeeff; color: #0a4a7a; }
 .title { font-weight: 600; }
 .msg { margin: .35rem 0; }
+.pos { color: #57606a; font-family: ui-monospace, SFMono-Regular, Menlo,
+  monospace; font-size: .9em; word-break: break-all; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .8rem;
   margin: .6rem 0 0; font-size: .9rem; }
 dt { color: #57606a; font-weight: 600; }
@@ -1800,23 +2297,55 @@ def build_html(report):
     location), and EVERY such value is HTML-escaped through :func:`_h` before it
     reaches the markup (injection-safe).
 
-    Self-containment (hard requirement): the only styling is an inline
-    ``<style>`` block (:data:`_HTML_STYLE`); there are NO external CSS/JS/CDN
-    references, no ``<img>``, no web fonts, no analytics — the file opens offline
-    with zero network requests.
+    Self-containment (hard requirement): the document fetches NO external
+    SUBRESOURCE. The only styling is an inline ``<style>`` block
+    (:data:`_HTML_STYLE`); there is no external CSS/JS/CDN reference, no
+    ``<script>``, no ``<img>``, no web font, no ``@import``, no analytics — so
+    the file RENDERS offline with zero network requests. Plain navigational
+    ``<a href>`` links to the public rule pages ARE emitted (see below): a
+    hyperlink issues no request until a human clicks it, so it costs the
+    offline reader nothing while giving the artifact — the one output that
+    travels to a second person — a way back to the authoritative rule text.
 
-    Determinism + path invariance (RPT.8, pinned by ``test_report_html.py``):
-    the document embeds NO wall-clock timestamp and NO machine path — the
-    ``source`` meta line shows only ``os.path.basename(report["source"])``, so
-    building the same report twice, or from a relative vs an absolute path to
-    the same file, yields byte-identical HTML (a reproducible CI artifact).
+    Rule-page links: each finding's rule id is an anchor to
+    :func:`rule_page_url` (the SAME single URL builder the SARIF ``helpUri``
+    and the text report's ``rule page:`` line use), and ONLY when the
+    remediation catalog really has an entry for that id — that catalog is what
+    the site's rule pages are generated from, so a link is emitted exactly when
+    a page exists. A synthetic/unknown rule id and the not-well-formed-XML row
+    render plain, with no link, and an installation whose catalog is missing
+    degrades to a link-free document (never a traceback).
+
+    Determinism (RPT.8, pinned by ``test_report_html.py``): the document embeds
+    NO wall-clock timestamp and no set/dict iteration order, so building the
+    same report from the same input twice is byte-identical — a reproducible CI
+    artifact.
+
+    Path echo, stated exactly (changed by T-VHRPTH.3; see REPORT-FORMATS.md
+    "Path echo"): the ``source`` meta line still shows ONLY
+    ``os.path.basename(report["source"])``, never the directory part. The one
+    place the caller's spelling now appears is a FINDING'S POSITION, and only
+    when the engine actually resolved one — because ``line 28`` with no file
+    beside it is not an address a recipient can act on, and the position is the
+    entire point of this document travelling to a second person. That echo is
+    verbatim and is the SAME string the text, json and sarif surfaces already
+    emit: pass a relative path and the document holds a relative path; pass an
+    absolute one and it holds that. Consequence, and it is deliberate: for a
+    report that HAS a positioned finding, relative-path and absolute-path
+    invocations of the same file are no longer byte-identical — exactly the
+    trade sarif made when it gained ``region.startLine``. A report whose
+    findings carry no position (and every unpositioned finding in any report)
+    is unchanged, path-invariant, byte-for-byte.
 
     Layout:
       * a pass/fail banner ("Conformant" vs "N finding(s)") built from the same
         summary fields (``valid``/``fatal_count``/``warning_count``/
         ``violation_count``) the JSON path exposes;
       * one card per violation carrying the rule id, a severity pill, the
-        remediation ``title``, the violation ``message``, and a definition list
+        remediation ``title``, the violation ``message`` (with the finding's
+        position appended when there is one — ``at file:line`` for an
+        attributable finding, the distinctly worded
+        ``(insertion point file:line)`` for an absence), and a definition list
         of ``fix_hint`` / BT-BG ``terms`` / ``field`` / ``location``;
       * a not-well-formed input (``report`` has an ``error``) renders a single
         error row with the error code + parser message — mirroring the JSON /
@@ -1827,6 +2356,12 @@ def build_html(report):
     """
     profile = report.get("profile", "")
     source = report.get("source", "")
+
+    # The set of rule ids for which an authoritative reference page exists —
+    # the SAME gate, read through the SAME defensive accessor, the SARIF
+    # helpUri path uses. A catalog-less installation yields {} here, which
+    # simply means "nothing links": the document is still produced in full.
+    catalog_ids = _remediation_catalog()
 
     parts = []
     parts.append("<!doctype html>")
@@ -1892,19 +2427,75 @@ def build_html(report):
             terms = v.get("terms") or []
             field = v.get("field")
             location = v.get("location")
+            # POSITION (T-VHRPTH.3). The HTML report is the ONE artifact of
+            # ours that travels to a second person — a CI download, a file
+            # attached to an invoice dispute, a forward to an accountant — and
+            # until now its recipient got strictly LESS than the CLI user who
+            # produced it: the engine had already computed the position and
+            # text/json/junit all rendered it, while this document handed over
+            # a bare XPath (a structural address that names WHICH element is
+            # wrong and gives the reader nothing to jump to).
+            #
+            # It is rendered through the SAME two helpers the other two HUMAN
+            # surfaces use (the text report, :func:`build_text`, and the JUnit
+            # <failure> body) — deliberately NOT a third formatter, so the
+            # three can never phrase a position differently — and with the
+            # same precedence: a proven error site (``at file:line``) always
+            # wins over a guessed-at destination.
+            #
+            # THE HONESTY RULE IS VISIBLE HERE, NOT JUST IN THE HELPERS. An
+            # insertion point is where the missing thing GOES; nothing on that
+            # line is wrong. So an absence never reads "at broken.xml:28" (a
+            # reader, and any editor that jumps there, would take that as "the
+            # error is on line 28" and land on an innocent <cac:Party>) — it
+            # reads "(insertion point broken.xml:28)" and carries the word
+            # "insertion" literally. Worked example, the file our onboarding
+            # docs tell a stranger to run:
+            #   BR-DE-2: The group 'SELLER CONTACT' (BG-6) must be transmitted.
+            #     (insertion point examples/01-missing-fields/broken.xml:28)
+            # A finding the engine could place at a real element instead reads:
+            #   at fixtures/creditnote-invalid-typecode_ubl.xml:28
+            # A finding with NEITHER renders byte-identically to before: the
+            # helpers validate bool/int >= 1 and return "" otherwise, and
+            # nothing here adds a :0 or :1 fallback.
+            position = (_position_suffix(source, v.get("source_line"))
+                        or _insertion_point_suffix(
+                            source, v.get("insertion_point_line")))
 
             sev_class = severity if severity in (
                 "fatal", "warning", "information") else "information"
 
             parts.append('<div class="finding">')
-            head = ['<span class="rule-id">%s</span>' % _h(rule),
+            # The rule id becomes a link ONLY when the catalog has an entry for
+            # it (that is where a published page exists) — otherwise it renders
+            # exactly as it always did, as plain text.
+            if rule and rule in catalog_ids:
+                rule_markup = ('<a class="rule-id" href="%s">%s</a>'
+                               % (_h(rule_page_url(rule)), _h(rule)))
+            else:
+                rule_markup = '<span class="rule-id">%s</span>' % _h(rule)
+            head = [rule_markup,
                     '<span class="sev %s">%s</span>'
                     % (_h(sev_class), _h(severity))]
             if title:
                 head.append('<span class="title">%s</span>' % _h(title))
             parts.append("<h2>%s</h2>" % "".join(head))
-            if message:
-                parts.append('<p class="msg">%s</p>' % _h(message))
+            # The position rides on the message line, exactly where the text
+            # report puts it, and the helper's return is emitted VERBATIM
+            # (leading space and all) inside the span — so the bytes a reader
+            # sees are character-for-character the bytes the text report and
+            # the JUnit <failure> body show. ``test_report_location.py``
+            # asserts that one shared string against all three surfaces at
+            # once, which is what makes "they can never phrase a position
+            # differently" mechanically true rather than aspirational.
+            # It goes through :func:`_h` like every other report-derived
+            # string: the path comes from argv, so it is untrusted text and
+            # must never reach the markup raw.
+            if message or position:
+                body = _h(message)
+                if position:
+                    body += '<span class="pos">%s</span>' % _h(position)
+                parts.append('<p class="msg">%s</p>' % body)
 
             rows = []
             if fix_hint:
@@ -1924,6 +2515,18 @@ def build_html(report):
                                  % (' class="mono"' if mono else "", val))
                 parts.append("</dl>")
             parts.append("</div>")
+
+        if violations:
+            # ONE short, factual line: what the links are, and the offline
+            # equivalent. `einvoice --explain <RULE-ID>` is the real CLI form
+            # (a global option, NOT an `explain` subcommand) and needs no
+            # network. The angle brackets are escaped so the placeholder can
+            # never be read as markup.
+            parts.append(
+                '<p class="note">Rule ids with a published reference page '
+                'link to it; ids without one are shown plain. Offline, '
+                '<code>einvoice --explain &lt;RULE-ID&gt;</code> prints the '
+                'same rule text from your local install.</p>')
 
     parts.append("<footer>Static conformance artifact — reflects this one "
                  "report run against the invoice above. Generated offline by "

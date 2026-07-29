@@ -17,6 +17,16 @@ What is actually asserted (each maps to a README/pyproject claim):
      to green an empty input set.
   5. (env-guarded) a wheel actually builds via pip and contains the package +
      the console-script entry point — skipped when setuptools < 61.
+  6. SHIPPED WEB BUNDLE: the committed `www/validate/engine/` bundle — the
+     engine the zero-install browser validator at /einvoice/validate/ actually
+     runs — is byte-identical to the packaged engine and its manifest sha256
+     map is current. This is a DISTRIBUTION claim like the others: the browser
+     bundle is a shipped copy of the package, and a stale copy means a
+     prospect evaluates a product we no longer sell. Asserted by DELEGATION to
+     `test_web_bundle.check_web_bundle()` — that guard owns the definition of
+     "fresh"; this file owns only the fact that a registered gate runs it.
+     (T-VHWEB.4: the bundle sat ~15 commits stale, 6c4dd18..9ed0b74, because
+     test_web_bundle.py was not registered anywhere. Now it cannot be.)
 
 Standard library only. Runs offline.
 """
@@ -274,6 +284,34 @@ class CiGate(unittest.TestCase):
             make_bad_invoice(os.path.join(tmp, "bad.xml"))
             proc = self.gate(tmp, env_extra={"EINVOICE_PROFILE": "en16931"})
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+
+class WebBundleFreshness(unittest.TestCase):
+    """Claim 6 — the shipped browser bundle is a CURRENT copy of the package.
+
+    Pure delegation, on purpose. The byte-identity / manifest / self-
+    containment / accepted-root-parity logic lives in exactly one place,
+    `test_web_bundle.py`; duplicating any of it here would recreate the drift
+    it guards against one level up. All this test contributes is REACHABILITY:
+    test_packaging.py is a registered gate, test_web_bundle.py was not.
+    """
+
+    def test_shipped_web_bundle_matches_the_packaged_engine(self):
+        # Imported lazily so test_web_bundle's module-level sys.path edits and
+        # engine imports only happen when this claim actually runs.
+        sys.path.insert(0, HERE)
+        import test_web_bundle
+
+        self.assertTrue(
+            os.path.isdir(os.path.join(HERE, "www", "validate", "engine")),
+            "www/validate/engine/ is missing — the browser validator has no "
+            "engine to run")
+        rc, report = test_web_bundle.check_web_bundle()
+        self.assertEqual(
+            rc, 0,
+            "the committed www/validate/engine/ bundle is STALE or divergent "
+            "from einvoice/ — regenerate it with `python3 gen_site.py` (never "
+            "hand-edit a bundled file or manifest.json).\n" + report)
 
 
 def _setuptools_can_pep621():

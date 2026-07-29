@@ -61,11 +61,34 @@ Checks (each an independent hard assert):
       the structural refusal. See :func:`accepted_root_set`.
 """
 
+# ---------------------------------------------------------------------------
+# REGISTERED-GATE CARRIER (T-VHWEB.4) — mirrors the remedy T-VHDRIFT.1 wrote
+# into test_docs_example_output.py, except this one is WIRED, not merely
+# documented.
+#
+# This guard is not registered as a gate under its own name, and that is
+# exactly how the bundle rotted: it sat red at HEAD for ~15 commits
+# (6c4dd18..9ed0b74) while the browser validator at /einvoice/validate/ shipped
+# the pre-EPIC-VHLOC engine — no source line, no insertion point, no rule-page
+# links — and nobody ran the guard that knew.
+#
+# The REGISTERED gate that now runs it is:
+#
+#     python3 test_packaging.py     (class WebBundleFreshness, claim 6)
+#
+# It calls :func:`check_web_bundle` below — the single importable definition of
+# "the shipped bundle is fresh". test_packaging.py deliberately holds NO copy
+# of the byte-comparison logic, so the two files cannot drift apart. If you
+# move or rename that entry point, fix test_packaging.py in the same commit.
+# ---------------------------------------------------------------------------
+
 from __future__ import annotations
 
 import ast
+import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -565,6 +588,29 @@ def main():
           % (len(bundle_mods), len(bundle_data), ", ".join(sorted(bundle_data)),
              len(accepted_pkg or ()), len(tags) if accepted_pkg else 0))
     return 0
+
+
+def check_web_bundle():
+    """Importable entry point — the ONE definition of "the bundle is fresh".
+
+    Runs the exact same checks :func:`main` runs (it *is* ``main``; nothing is
+    reimplemented or subsetted here) with stdout/stderr captured, so a caller
+    inside another test runner gets a value instead of console noise.
+
+    Used by the registered gate ``test_packaging.py`` (claim 6) — see the
+    REGISTERED-GATE CARRIER note at the top of this file. Keep this the only
+    seam: a second copy of the byte-comparison loop anywhere else is precisely
+    the drift this guard exists to prevent.
+
+    :returns: ``(rc, report)`` — ``rc`` is 0 iff the committed bundle is
+        byte-identical to the packaged engine with a current manifest, and
+        ``report`` is main()'s own diagnostic text (the ``!!`` failure lines on
+        failure, the one-line summary on success).
+    """
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = main()
+    return rc, (err.getvalue() + out.getvalue()).strip()
 
 
 if __name__ == "__main__":

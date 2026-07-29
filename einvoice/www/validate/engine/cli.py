@@ -137,8 +137,15 @@ Subcommands:
                batch_exit_code / build_batch_text) verbatim — it re-implements
                no aggregation or rule logic; see that module for the aggregate
                ``einvoice-conformance-batch/v1`` schema. Prints a per-file
-               PASS/FAIL/ERROR summary plus an aggregate tally (or, with
-               --json, the aggregate batch dict). ``--quiet`` suppresses the
+               PASS/FAIL/ERROR line that NAMES the rule ids behind its counts
+               (``[fatal] BR-DE-2: ...``, every severity, capped by
+               ``einvoice.report._BATCH_RULE_LIST_CAP`` with an explicit
+               "N more not shown" disclosure), then the aggregate tally, a
+               'most violated rules' block (rule id + how many files it broke,
+               same cap) and ONE ``einvoice --explain <RULE-ID>`` line whose id
+               is taken from a rule this run actually violated — never a
+               hard-coded example. With --json the aggregate batch dict is
+               emitted instead, byte-unchanged. ``--quiet`` suppresses the
                human summary but preserves the exit code (and still emits the
                JSON when --json is set). A zero-match glob / empty directory is
                reported honestly as ``file_count: 0`` with a note, exit 0 — not
@@ -212,9 +219,13 @@ Exit codes (stable contract):
        and measurably leaked a stray ``einvoice-stdin-*.xml``), then exits
        quietly with this code. Purely additive.
 
-Default output on failure: the FIRST fatal violated rule id, a human message
-and the offending element. With --json, the full result (all violations,
-each with its severity) is emitted.
+Default output on failure: a headline detailing one fatal violation (its rule
+id, a human message, the offending element and the two remediation routes),
+then the total finding count and EVERY other rule the run violated, one
+indented ``[severity] RULE: message`` line each, capped at
+``_NON_FATAL_LIST_CAP`` with an explicit "N more not shown" line when a
+document exceeds it. With --json, the full result (all violations, each with
+its severity and every structured field) is emitted.
 
 Standard library only.
 """
@@ -236,7 +247,9 @@ from .report import (
     build_batch_report, build_batch_report_from_files,
     batch_exit_code, build_batch_text,
     REPORT_FORMATS, BATCH_FORMATS,
-    SARIF_RULE_HELP_BASE_URL,
+    rule_page_url,
+    _position_suffix,
+    _insertion_point_suffix,
 )
 from .remediation import resolve_message, SUPPORTED_LANGS, entry_for
 from .config import load_config_with_source, ConfigError
@@ -991,7 +1004,10 @@ def _run_validate_batch(rest, profile, as_json, quiet, fail_on="fatal",
     Every batched file flows through the identical ``build_report`` ->
     ``validate_file`` / ``parse_file`` path, so the DTD/XXE/resource hardening
     applies to every input unchanged (a hostile DOCTYPE file becomes an ERROR
-    entry, never a parse or a crash). Prints the human per-file summary via
+    entry, never a parse or a crash). Prints the human per-file summary — which
+    since T-VHUX2.4 names the rule ids behind each file's counts, ranks the most
+    violated rules across the run, and points at ``einvoice --explain`` with a
+    rule id from this very run — via
     :func:`einvoice.report.build_batch_text` unless ``--quiet``; with ``--json``
     emits the aggregate batch dict as ``json.dumps(batch, indent=2)`` (still
     emitted under ``--quiet``). Returns
@@ -1720,11 +1736,22 @@ def _main(argv=None):
                 for v in result.violations[:_NON_FATAL_LIST_CAP]:
                     # Same message resolution as the FAIL path, so --lang de
                     # keeps surfacing the official German text where the rule
-                    # carries one.
+                    # carries one — and the same position convention
+                    # (T-VHLOC.3 `file:line`, T-VHLOC.6 insertion point). All
+                    # three line-bearing rules (BR-CL-01 / -04 / -05) are FATAL
+                    # today, so no advisory finding reaches this branch with a
+                    # source line; an advisory ABSENCE can be anchored though
+                    # (BR-DE-TMP-32 is information-severity), so this arm does
+                    # render an insertion point when one resolves.
                     sys.stdout.write(
-                        "    [%s] %s: %s\n"
+                        "    [%s] %s: %s%s\n"
                         % (_severity(v), v.rule_id,
-                           resolve_message(v.rule_id, v.message, lang)))
+                           resolve_message(v.rule_id, v.message, lang),
+                           _position_suffix(
+                               display_path, getattr(v, "source_line", None))
+                           or _insertion_point_suffix(
+                               display_path,
+                               getattr(v, "insertion_point_line", None))))
                 if non_fatal > _NON_FATAL_LIST_CAP:
                     # Honest about the truncation AND about the exact flag that
                     # shows everything — never a vague "see the JSON output".
@@ -1740,9 +1767,38 @@ def _main(argv=None):
                 # message. Only the DISPLAY string changes — rule_id/element and
                 # the exit code are untouched.
                 message = resolve_message(v.rule_id, v.message, lang)
+                # MEASURED defect this fixes (T-VHLOC.3, 2026-07-26): the
+                # headline named the offending element as an XPath and stopped
+                # there, while the engine had already stamped the concrete
+                # 1-based `source_line` for attributable findings (T-VHDIAG.1)
+                # and json/sarif/github/azure/gitlab were all rendering it. An
+                # XPath is a structural address; `file:line` is the one an
+                # editor and a terminal linkify, so the position is APPENDED to
+                # the existing "offending element" line — no new line, no new
+                # section. A finding the engine could not attribute prints the
+                # historic bytes exactly (`_position_suffix` returns ""); a
+                # guessed line 0/1 would be worse than none.
+                #
+                # T-VHLOC.6 completes that line for the OTHER half of the
+                # findings. An absence has no offending element to attribute
+                # (its XPath names something that is NOT there), so when the
+                # engine resolved an insertion point it is rendered here in its
+                # own distinctly worded shape — "(insertion point
+                # broken.xml:28)", never "at broken.xml:28", because 28 is
+                # where the fix GOES and nothing on it is wrong. Worked example,
+                # the file our own onboarding docs tell a stranger to run:
+                #   FAIL: examples/01-missing-fields/broken.xml
+                #     BR-DE-2: The group 'SELLER CONTACT' (BG-6) must be …
+                #     offending element: cac:AccountingSupplierParty/cac:Party/
+                #     cac:Contact (insertion point …/broken.xml:28)
                 sys.stdout.write(
-                    "FAIL: %s\n  %s: %s\n  offending element: %s\n"
-                    % (display_path, v.rule_id, message, v.element))
+                    "FAIL: %s\n  %s: %s\n  offending element: %s%s\n"
+                    % (display_path, v.rule_id, message, v.element,
+                       _position_suffix(display_path,
+                                        getattr(v, "source_line", None))
+                       or _insertion_point_suffix(
+                           display_path,
+                           getattr(v, "insertion_point_line", None))))
                 # MEASURED defect this fixes (T-VHUX2, 2026-07-25): the failure
                 # output handed over a rule id and stopped, while this very
                 # wheel ships `--explain` (the EN+DE remediation catalog) and
@@ -1767,15 +1823,79 @@ def _main(argv=None):
                 sys.stdout.write("  how to fix: einvoice --explain %s\n"
                                  % v.rule_id)
                 if catalogued:
-                    # ONE origin for the whole codebase: report.py's
-                    # SARIF_RULE_HELP_BASE_URL, which is the identical string
-                    # gen_site.py builds its rule-page URLs from
-                    # (BASE_URL + "/rules/"). No second origin literal is
-                    # introduced here, and gen_site is deliberately NOT imported
-                    # — it is not part of the wheel.
+                    # ONE origin for the whole codebase: report.rule_page_url(),
+                    # which spells SARIF_RULE_HELP_BASE_URL + id + "/" — the
+                    # identical string gen_site.py builds its rule-page URLs
+                    # from (BASE_URL + "/rules/"). No second origin literal and
+                    # no second concatenation are introduced here, and gen_site
+                    # is deliberately NOT imported — it is not part of the wheel.
                     sys.stdout.write(
-                        "  rule page:  %s%s/\n"
-                        % (SARIF_RULE_HELP_BASE_URL, v.rule_id))
+                        "  rule page:  %s\n" % rule_page_url(v.rule_id))
+                # MEASURED defect this fixes (T-VHFULL.1, 2026-07-25): the
+                # headline above is the whole default report, so a run that had
+                # already computed 12 findings printed exactly ONE of them and
+                # exited. examples/01-missing-fields/broken.xml is the small
+                # case: --format json carries BR-DE-2, BR-DE-15 and
+                # BR-DE-TMP-32, `validate-batch` counts "2 fatal", and the
+                # default text said "BR-DE-2" and nothing else. Since
+                # --format text is byte-identical to the default there was no
+                # human-readable route to finding two at all, which turned one
+                # validation into a fix-and-re-run round trip per rule.
+                #
+                # Nothing above this point changed: the verdict line is still
+                # first and still the ONLY line starting with "FAIL", the rule
+                # id / message / offending element / how-to-fix / rule-page
+                # block is byte-identical, every line added here is INDENTED
+                # (so the stdout-purity prefix guard and any `grep '^FAIL'`
+                # keep their meaning), and the exit code is decided far below
+                # from `result`, not from anything rendered here.
+                #
+                # Shape, cap and truncation wording are DELIBERATELY the PASS
+                # path's (see ~40 lines up): one convention for "here is a
+                # finding", one `_NON_FATAL_LIST_CAP`, one honest sentence that
+                # names the exact flag carrying everything.
+                total = len(result.violations)
+                fatal_total = sum(1 for x in result.violations
+                                  if _severity(x) == "fatal")
+                sys.stdout.write(
+                    "  %d finding(s) total: %d fatal, %d non-fatal "
+                    "(--format json carries every field of each)\n"
+                    % (total, fatal_total, total - fatal_total))
+                # `is not v` — identity, not equality: two findings of the same
+                # rule on different lines must both survive, and only the ONE
+                # object already detailed in the headline is dropped.
+                others = [x for x in result.violations if x is not v]
+                if others:
+                    sys.stdout.write("  also violated:\n")
+                for x in others[:_NON_FATAL_LIST_CAP]:
+                    # Same message resolution as the headline, so --lang de
+                    # surfaces the official German text on these lines too —
+                    # and the same position convention (T-VHLOC.3 `file:line`
+                    # for a proven error site, T-VHLOC.6 "(insertion point
+                    # file:line)" for an anchorable absence), so a reader does
+                    # not have to re-run the tool per rule to learn where the
+                    # second finding lives. Findings the engine could place
+                    # neither way keep their exact previous bytes.
+                    sys.stdout.write(
+                        "    [%s] %s: %s%s\n"
+                        % (_severity(x), x.rule_id,
+                           resolve_message(x.rule_id, x.message, lang),
+                           _position_suffix(
+                               display_path, getattr(x, "source_line", None))
+                           or _insertion_point_suffix(
+                               display_path,
+                               getattr(x, "insertion_point_line", None))))
+                if len(others) > _NON_FATAL_LIST_CAP:
+                    # Identical honesty to the PASS path: say how many were
+                    # omitted and name the flag that shows all of them. "all %d"
+                    # is the TOTAL, not len(others), because that is what
+                    # --format json actually carries — the headline violation is
+                    # in the JSON too, and quoting 13 next to a "14 finding(s)"
+                    # line one row up would read as a discrepancy.
+                    sys.stdout.write(
+                        "    ... %d more not shown — use --format json for "
+                        "all %d\n"
+                        % (len(others) - _NON_FATAL_LIST_CAP, total))
             # Syntax-binding warnings are a separate, non-blocking category —
             # print the count on its own line so the exit-driving FAIL/PASS
             # verdict above stays unambiguous.

@@ -6,6 +6,25 @@ A zero-dependency, embeddable, self-hostable conformance validator for
 PDF/A-3 containers — `einvoice validate invoice.pdf` extracts and grades the
 embedded XML directly, with the standard library only).
 
+Published reference site:
+**[verifyhash.com/einvoice](https://verifyhash.com/einvoice/)**. Four pages
+there settle most evaluation questions before you clone anything.
+[**Paste an invoice and grade it in your browser**](https://verifyhash.com/einvoice/validate/)
+runs this same engine client-side via Pyodide/WebAssembly — the invoice is
+never uploaded, and the cost is a one-time runtime download, so the first
+grade waits on that download and every later one starts straight away.
+[**Why not the official KoSIT validator?**](https://verifyhash.com/einvoice/compare/)
+is a comparison that starts by conceding the awkward parts: KoSIT's validator
+is free and is the *reference* implementation, the correctness claim below is
+*derived from* their Schematron artifact, and it carries a "when to prefer
+them" section (XSD schema validation, full Peppol BIS ecosystems, writing
+ZUGFeRD PDFs — none of which this engine does).
+[**The rule index**](https://verifyhash.com/einvoice/rules/) gives one page per
+rule with the official rule text, the syntaxes it is proven on and a concrete
+fix hint; the
+[**5-minute worked walkthrough**](https://verifyhash.com/einvoice/walkthrough/)
+reads one failing invoice end to end instead.
+
 - **Zero dependency.** Python 3 (>=3.8) standard library only. No lxml, no
   Java, no Schematron toolchain, no network calls. `pip install
   verifyhash-einvoice` gets you the released package and its `einvoice`
@@ -21,18 +40,23 @@ embedded XML directly, with the standard library only).
   your tree is a supported (and tested) install method.
 - **Self-hostable.** Runs fully offline — zero network egress, enforced at
   the socket layer by `test_network_egress.py` (see
-  [`SECURITY.md`](SECURITY.md)). The rule corpus and test
+  [`SECURITY.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/SECURITY.md)). The rule corpus and test
   fixtures are vendored in-repo (`corpus/`), so the thing you validate against
   is auditable and pinned — no dependency on a third-party validation API. The
   supply-chain posture (zero runtime deps, offline, vendored corpus) is
-  written up for evaluators in [`SECURITY.md`](SECURITY.md), backed by a
-  committed CycloneDX 1.5 SBOM at [`sbom/bom.json`](sbom/bom.json).
+  written up for evaluators in [`SECURITY.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/SECURITY.md), backed by a
+  committed CycloneDX 1.5 SBOM at [`sbom/bom.json`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/sbom/bom.json).
 - **CI-gateable.** `ci/` ships a copy-paste build gate (POSIX sh + GitHub
   Actions / GitLab CI recipes) that fails a build on any non-conformant
   invoice, naming the violated rule ID. See [§4](#4-ci-conformance-gate).
 - **Deutsche Anleitung.** A German-language quickstart whose shell commands
   are kept byte-identical to the English docs by an automated parity check
-  (`test_install_command_drift.py`): [`QUICKSTART.de.md`](QUICKSTART.de.md).
+  (`test_install_command_drift.py`): `QUICKSTART.de.md`, next to this file in
+  a source checkout. It is named rather than linked on purpose — that file is
+  not on the published `main` branch yet, so any URL for it would 404 today.
+  The German pages that ARE published are the
+  [German landing page](https://verifyhash.com/einvoice/de/) and its
+  [worked walkthrough](https://verifyhash.com/einvoice/de/walkthrough/).
 
 ### Safe on untrusted input
 
@@ -56,7 +80,7 @@ unchanged and still proven by `test_packaging.py`. Concretely, the parser:
 
 Full guarantee (including the byte-length / element-count / nesting-depth
 resource ceilings on well-formed-but-hostile input) is written up in
-[`SECURITY.md`](SECURITY.md) under **"Untrusted input / XML entity handling"**,
+[`SECURITY.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/SECURITY.md) under **"Untrusted input / XML entity handling"**,
 and is proven end-to-end by `test_security.py` (billion-laughs,
 quadratic-blowup, `file://` external-entity read with a secret-canary
 leak check, `/etc/passwd` XXE, external-DTD `SYSTEM`) and `test_robustness.py`,
@@ -65,7 +89,7 @@ unchanged.
 
 Read §2 before trusting it with anything. The engine asserts **297 business
 rules** in total — the exact set the code fires, enumerated per rule in
-[`COVERAGE.md`](COVERAGE.md) / `coverage_matrix.json` and drift-gated by
+[`COVERAGE.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/COVERAGE.md) / `coverage_matrix.json` and drift-gated by
 `test_coverage_matrix.py` against the live rule registries. That total breaks
 down as: **219 of the 223 official EN 16931 `BR-*` rule ids** in each CEN
 syntax universe (UBL and CII) — **every official rule that can actually fire**
@@ -94,7 +118,7 @@ a footnote: **4 official ids (`BR-CO-05`–`BR-CO-08`) are shipped as literal
 fire, in either universe, so implementing them with a differential proof is
 impossible *by construction*. Those 4 tautologies are documented with
 verbatim artifact evidence in
-[`COVERAGE.md`](COVERAGE.md), the generated per-rule matrix that is the
+[`COVERAGE.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/COVERAGE.md), the generated per-rule matrix that is the
 authoritative inventory (it supersedes the partial family-orientation tables in
 §2, which name only about half the core rules, wherever they disagree). A related asymmetry worth knowing: the total-VAT
 decimal pair `BR-DEC-13`/`BR-DEC-15` is implemented and
@@ -113,7 +137,7 @@ comparisons**; XRechnung + KoSIT-vendored Peppol on UBL — 76 graded ids ×
 1067 invoices = **81,092 comparisons**; EN 16931 core on CII — the 96-rule
 graded subset × 111 invoices = **10,656 comparisons**; XRechnung + Peppol on
 CII — 52 graded ids × 117 invoices = **6,084 comparisons**. See
-[`CORRECTNESS.md`](CORRECTNESS.md) for the method, corpora, and the honest
+[`CORRECTNESS.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/CORRECTNESS.md) for the method, corpora, and the honest
 limits of those claims.
 
 **CII proof parity — the worklist is now CLOSED.** The two bindings share one
@@ -197,7 +221,7 @@ prints `219 55 49`.
 > table names 108 concrete ids, about half of the 219 the engine asserts, and it
 > is kept only because reading "is this family covered at all?" off a short
 > table is faster than scanning 297 rows.
-> [`COVERAGE.md`](COVERAGE.md) / `coverage_matrix.json` — regenerated from the
+> [`COVERAGE.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/COVERAGE.md) / `coverage_matrix.json` — regenerated from the
 > live rule registries by `gen_coverage.py` and drift-gated against them by
 > `test_coverage_matrix.py` — is the **authoritative per-rule inventory**, with
 > the official rule text and per-syntax proof state for every one of the 297
@@ -290,10 +314,10 @@ All implemented rules agree with their official Schematron on every graded
 invoice. Reproduce it (needs `saxonche` importable): `python3 differential.py`
 (or `... en` / `... xrechnung` for one leg). Method, corpus breakdown, the
 divergences that were found and fixed, and the honest scope limits are
-documented in [`CORRECTNESS.md`](CORRECTNESS.md). This proves faithfulness
+documented in [`CORRECTNESS.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/CORRECTNESS.md). This proves faithfulness
 **only for the graded rule × syntax pairs** — the per-rule graded sets, and
 the reasons some implemented rules are not graded on CII, are enumerated in
-[`COVERAGE.md`](COVERAGE.md) — not EN 16931 or XRechnung as a whole (see §2
+[`COVERAGE.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/COVERAGE.md) — not EN 16931 or XRechnung as a whole (see §2
 "NOT covered").
 
 ### Conformance result (this run)
@@ -342,8 +366,8 @@ same holds for the **CII (UN/CEFACT)** binding: **39 of 39** in-scope
 classified exactly as the suite labels them. The 8 out-of-scope documents (the
 extension and CVD guidelines, in both syntaxes) are machine-listed with their
 exact reason in
-[`testsuite_conformance.json`](testsuite_conformance.json); see
-[`CORRECTNESS.md` §4a](CORRECTNESS.md) for provenance and scope.
+[`testsuite_conformance.json`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/testsuite_conformance.json); see
+[`CORRECTNESS.md` §4a](https://github.com/verifyhash/verifyhash/blob/main/einvoice/CORRECTNESS.md) for provenance and scope.
 
 ### NOT covered yet (deliberate scope limits — do not rely on these)
 
@@ -386,7 +410,7 @@ exact reason in
   for them. The `BR-CL-*` code-list class carries no deferrals — the engine
   asserts every fireable code-list check in both syntaxes. Per-rule
   reasons and verbatim artifact evidence:
-  [`COVERAGE.md`](COVERAGE.md) §Exclusions.
+  [`COVERAGE.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/COVERAGE.md) §Exclusions.
 - **No XSD (structural schema) validation.** Layer S-XSD is deferred; only
   well-formedness and the root element are checked structurally.
 - **UBL `CreditNote` IS validated; no signatures.** A UBL 2.1 `CreditNote`
@@ -414,7 +438,7 @@ See `SPEC.md` §6 for the full deferred list.
 
 ## 3. Install / embed / usage
 
-> **New here?** [`QUICKSTART.md`](QUICKSTART.md) is a tested 5-minute copy-paste
+> **New here?** [`QUICKSTART.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/QUICKSTART.md) is a tested 5-minute copy-paste
 > path: install, validate a passing and a failing sample invoice, and read the
 > exit code + `--json` — every command in it is run against the live engine by
 > `test_quickstart.py`.
@@ -504,7 +528,7 @@ machine-readable result:
 The first four keys are the identity of the finding; `field` repeats `element`
 under the name `python3 -m einvoice.report` uses, and `title` / `fix_hint` /
 `terms` / `location` are relayed from the committed
-[`remediation_catalog.json`](remediation_catalog.json) so a CI job can print
+[`remediation_catalog.json`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/remediation_catalog.json) so a CI job can print
 *what to change*, not just a rule id. All five are always present: a rule with
 no catalog entry emits `null` / `[]` rather than dropping the keys. A violation
 that could be attributed to a concrete source position additionally carries
@@ -527,8 +551,9 @@ tamper-evidence is a recompute-and-compare of `content_sha256` over the
 canonical body. `einvoice receipt --verify <receipt.json>` runs exactly that
 check for you in one command (details under **`receipt --verify`** below); the
 same check is reproducible in any language without our binary — see
-[`RECEIPT-VERIFICATION.md`](RECEIPT-VERIFICATION.md) for the exact recipe and its
-honest limit (the outer hash is a body digest, not self-covering).
+`RECEIPT-VERIFICATION.md` in a source checkout (named, not linked: it is not on
+the published `main` branch yet, so a URL for it would 404) for the exact recipe
+and its honest limit (the outer hash is a body digest, not self-covering).
 
 | Code | Meaning |
 |---|---|
@@ -555,7 +580,7 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   commands it lists is bound to the `VALID_SUBCOMMANDS` registry by
   `test_cli_help.py`, so a new subcommand cannot go silently undocumented.
 - `--json` — emit the full machine-readable result instead of the human
-  summary (shape below and in [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md)).
+  summary (shape below and in [`REPORT-SCHEMA.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/REPORT-SCHEMA.md)).
 - `--format <fmt>` (also `--format=<fmt>`) — **select the output shape** on
   `validate` and `validate-batch`. The vocabulary is the same nine names
   `einvoice info` advertises under `formats`, read from the one registry
@@ -579,7 +604,7 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   conflicting values, or `--format` together with `--json` are all clean usage
   errors (`2`) — never a silent last-wins. `--quiet` and `--lang` are no-ops for
   a machine format, exactly as with `--json`. See
-  [`EXIT-CODES.md`](EXIT-CODES.md) for the full contract.
+  [`EXIT-CODES.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/EXIT-CODES.md) for the full contract.
 - `--quiet` — suppress the human `PASS`/`FAIL`/`Syntax-binding warnings` summary
   on stdout. The **exit code is unchanged**, and `--quiet` does *not* suppress
   `--json`: `validate --quiet --json` still prints the JSON (quiet only silences
@@ -608,7 +633,7 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   message on the rules that have one, plus a `german` line naming which of those
   two provenances you got; anything without a German string stays English. Both
   entry points accept it and stay byte-identical. Exact per-field coverage:
-  [EXIT-CODES.md](EXIT-CODES.md#what---langde-actually-gives-you-measured-german-coverage).
+  [EXIT-CODES.md](https://github.com/verifyhash/verifyhash/blob/main/einvoice/EXIT-CODES.md#what---langde-actually-gives-you-measured-german-coverage).
 - `--show-config` — **read-only observability**: resolve the effective
   `format` / `fail-on` / `lang` exactly as a real `validate` run would (explicit
   flag > config file > built-in default) and print each with its **source** —
@@ -619,13 +644,13 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   resolution and vocabulary checks are shared, never re-implemented. Purely
   additive: omitting the flag leaves every `validate` run byte-identical to
   today. Pinned by `test_show_config.py`; the config-file layer it reports is
-  documented in [`QUICKSTART.md`](QUICKSTART.md) §6.
+  documented in [`QUICKSTART.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/QUICKSTART.md) §6.
 
 **Input** — `validate <invoice.xml>` reads a file; `validate -` reads the
 invoice XML from **stdin** (e.g. `curl -s … | einvoice validate -`). The stdin
 bytes are staged to a temporary file and validated through the *identical*
 DTD/XXE/resource-hardened parser used for on-disk files — piping in does **not**
-get a relaxed parse path (see [`SECURITY.md`](SECURITY.md)). `receipt` reads a
+get a relaxed parse path (see [`SECURITY.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/SECURITY.md)). `receipt` reads a
 file only.
 
 **`receipt --verify <receipt.json>`** — the one-command integrity check for a
@@ -648,8 +673,8 @@ itself was corrupted; `2` + an `error:` line on stderr (no traceback) when the
 file is not a readable receipt (non-JSON / garbage / truncated, valid JSON that
 is not a receipt, or a nonexistent path). `--verify` is valid only for `receipt`.
 This is a convenience over the manual recipe, not a stronger guarantee: it shares
-the recompute-and-compare limit documented in
-[`RECEIPT-VERIFICATION.md`](RECEIPT-VERIFICATION.md), which also gives the
+the recompute-and-compare limit documented in the checkout-only
+`RECEIPT-VERIFICATION.md`, which also gives the
 zero-trust recipe for consumers who won't run our binary.
 
 **Batch — `validate-batch <dir|glob>`** validates a whole set of invoices in one
@@ -731,11 +756,11 @@ python3 -m einvoice info --json | python3 -m json.tool
 
 A tested fail-fast CI recipe built on this output — assert a required
 profile/format in one line before your validate step — is in
-[`QUICKSTART.md`](QUICKSTART.md) §5 (pinned by `test_ci_capability_recipe.py`).
+[`QUICKSTART.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/QUICKSTART.md) §5 (pinned by `test_ci_capability_recipe.py`).
 
 **`--json` shape** — the exact field-by-field schema of the `--json` result
 (including the `syntax_bindings` array and its two count fields) is documented
-in [`REPORT-SCHEMA.md`](REPORT-SCHEMA.md). A machine-readable JSON Schema
+in [`REPORT-SCHEMA.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/REPORT-SCHEMA.md). A machine-readable JSON Schema
 (`report.schema.json`) for this shape is planned; once published it will live
 alongside `REPORT-SCHEMA.md`, and this contract is written to stay compatible
 with it — the CLI does not depend on that file existing.
@@ -790,7 +815,7 @@ data-driven evaluator (`einvoice/syntax_binding_eval.py` — a closed XPath subs
 not a general processor) mirrors **735 of 756 UBL + 506 of 583 CII** of them, each
 differential-proven equivalent to the official CEN Schematron at **0 divergences**
 over the corpus; the remaining **98 (21 UBL + 77 CII)** are left machine-listed as
-`known-open` in [`COVERAGE.md`](COVERAGE.md) — never guessed, never silently
+`known-open` in [`COVERAGE.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/COVERAGE.md) — never guessed, never silently
 dropped. These counts are **kept strictly separate** from the 297 business rules
 and are recomputed live by `test_syntax_binding.py`.
 
@@ -803,12 +828,12 @@ and are recomputed live by `test_syntax_binding.py`.
 verdict above stays driven solely by fatal `BR-*` violations. The human summary
 adds one line, `Syntax-binding warnings: N`. This array carries **UBL ids only**
 — not because CII is refused (the CLI grades a raw `CrossIndustryInvoice` on its
-business rules like any other document, see [`EXIT-CODES.md`](EXIT-CODES.md)) but
+business rules like any other document, see [`EXIT-CODES.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/EXIT-CODES.md)) but
 because `report.syntax_binding_section` runs only the implemented UBL entries, so
 a CII document validates normally and reports `syntax_bindings: []`. The CII
 binding's own asserts are evaluated by `einvoice.syntax_binding_eval.cii_fired_ids`
 and differentially proven by the `differential.py sbcii` leg. Full field docs:
-[`REPORT-SCHEMA.md`](REPORT-SCHEMA.md).
+[`REPORT-SCHEMA.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/REPORT-SCHEMA.md).
 
 ### Reproduce this yourself
 
@@ -821,15 +846,15 @@ design):
 PYTHONPATH=$HOME/.local/lib/python3.10/site-packages python3 prove.py
 ```
 
-[`prove.py`](prove.py) runs, end to end and exiting non-zero on any failure:
+[`prove.py`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/prove.py) runs, end to end and exiting non-zero on any failure:
 
-1. [`differential.py`](differential.py) over **all six legs** — for every one of
+1. [`differential.py`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/differential.py) over **all six legs** — for every one of
    our implemented rule and syntax-binding ids it asks the same yes/no question
    ("does rule *R* fire on this document?") of the OFFICIAL vendored CEN / KoSIT
    Schematron (via Saxon) and of our engine, across the whole corpus, and counts
    **divergences** (a false positive or a miss). `prove.py` asserts and echoes
    that this count is **0**.
-2. [`conformance.py`](conformance.py) — the targeted invalid/valid fragment
+2. [`conformance.py`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/conformance.py) — the targeted invalid/valid fragment
    corpus — and asserts **0 hard fails** (no false positives; every covered
    invalid vector detected with the correct rule id).
 3. the coverage headline, recomputed **live** this run and printed in the shape:
@@ -843,7 +868,7 @@ and where it comes from:
 
 - **business rules** — `coverage_matrix.json['rule_count']`, the EN 16931 +
   XRechnung/Peppol `BR-*` rules our engine implements. Independently re-checked
-  by [`test_coverage_matrix.py`](test_coverage_matrix.py) (the JSON is a live
+  by [`test_coverage_matrix.py`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/test_coverage_matrix.py) (the JSON is a live
   re-render of what the engine fires, and `COVERAGE.md` is a byte-identical
   render of the JSON).
 - **divergences** — the step-1 total; **0** means our verdict never departs from
@@ -854,13 +879,13 @@ and where it comes from:
   `sbcii`). The totals come from `einvoice.syntax_binding.accounting()` and the
   proven counts from `einvoice.syntax_binding_eval.implemented_ids()` /
   `cii_implemented_ids()` — the **same** recomputation
-  [`test_syntax_binding.py`](test_syntax_binding.py) asserts.
+  [`test_syntax_binding.py`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/test_syntax_binding.py) asserts.
 
 Because it re-runs the full differential (all legs) plus the conformance corpus,
 `prove.py` takes a few minutes. It always pays that full cost: `prove.py` sets
 `DIFF_NO_CACHE=1` for every child it spawns, bypassing the local proof cache
 that speeds up ordinary `differential.py` gate runs, so a reproduce run is
-always a fully live Saxon re-proof — even on a warm development machine. [`test_prove.py`](test_prove.py) runs it and
+always a fully live Saxon re-proof — even on a warm development machine. [`test_prove.py`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/test_prove.py) runs it and
 asserts it exits 0, prints `0 divergences`, and that the UBL / CII / rule numbers
 it printed equal a fresh independent recompute — so the entrypoint is verified to
 report live truth, never a frozen string.
@@ -877,7 +902,7 @@ carries the resulting `attestation.json`, not the verifier script):
 python3 verify_attestation.py
 ```
 
-This reads [`attestation.json`](attestation.json) — a byte-reproducible record
+This reads [`attestation.json`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/attestation.json) — a byte-reproducible record
 that pins the exact numbers we publish — and confirms they still match the live
 source tree. It exits `0` only if nothing has moved. `attestation.json` pins:
 
@@ -899,7 +924,7 @@ byte compare; (2) it re-walks each vendored corpus tree and requires its digest
 to equal the pinned SHA-256 — so editing a corpus byte without regenerating the
 attestation is caught too. A skeptical ERP or procurement evaluator can run this
 against the source and confirm the conformance claim for themselves.
-[`test_attestation.py`](test_attestation.py) asserts this command exits 0, that
+[`test_attestation.py`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/test_attestation.py) asserts this command exits 0, that
 every number stated here equals the value in `attestation.json`, and that the
 tamper paths fail closed.
 
@@ -910,20 +935,20 @@ tamper paths fail closed.
 The distribution artifact an ERP/billing vendor actually wants: a build gate
 that makes "a non-conformant invoice reached the repo" a **red build**, with
 the violated rule ID named in the job log. Everything lives in
-[`ci/`](ci/README.md):
+[`ci/`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/ci/README.md):
 
-- [`ci/validate-invoices.sh`](ci/validate-invoices.sh) — the gate. POSIX sh,
+- [`ci/validate-invoices.sh`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/ci/validate-invoices.sh) — the gate. POSIX sh,
   zero deps beyond python3. Exit `0` = all conformant; exit `1` = at least one
   invoice failed (rule IDs printed); exit `2` = the gate itself is
   misconfigured — including **finding no invoices at all** (an empty gate is a
   broken gate, opt out with `EINVOICE_ALLOW_EMPTY=1`).
-- [`ci/github-actions.yml`](ci/github-actions.yml) — copy to
+- [`ci/github-actions.yml`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/ci/github-actions.yml) — copy to
   `.github/workflows/invoice-conformance.yml`.
-- [`ci/gitlab-ci.yml`](ci/gitlab-ci.yml) — merge into your `.gitlab-ci.yml`.
+- [`ci/gitlab-ci.yml`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/ci/gitlab-ci.yml) — merge into your `.gitlab-ci.yml`.
 
 **Zero-install alternative (GitHub only): the committed composite Action.**
 Instead of copying a workflow and pip-installing a vendored copy, pin the
-Action that ships in this repo at [`action/`](action/README.md) — the
+Action that ships in this repo at [`action/`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/action/README.md) — the
 zero-dependency validator travels *inside* the pinned ref, so there is nothing
 to install, and it additionally merges per-file SARIF for
 `github/codeql-action/upload-sarif` → inline PR annotations:
@@ -939,14 +964,14 @@ It is a thin wrapper around the same `python3 -m einvoice.report` entrypoint
 (no second engine, no new rules) and is gated by `test_action.py`. Full inputs
 (`path`, `format`, `fail-on`, `sarif-file`, `profile`), the `fail-on` →
 exit-code mapping, and the SARIF-upload step live in
-[`action/README.md`](action/README.md). It is referenced by in-repo path as
+[`action/README.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/action/README.md). It is referenced by in-repo path as
 shown — it is **not** listed on the GitHub Marketplace.
 
 The 60-second version (any CI system). This one vendors a **repository
 checkout** into `third_party/` — `ci/validate-invoices.sh` is a repo file, not
 part of the wheel; if you would rather install from PyPI, use
 `python3 -m pip install verifyhash-einvoice` and the recipes in
-[`ci/README.md`](ci/README.md):
+[`ci/README.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/ci/README.md):
 
 ```sh
 python3 -m pip install ./third_party/einvoice        # vendored copy; zero deps
@@ -1004,7 +1029,7 @@ Every violation record carries exactly `rule`, `severity`, `message`, `field`;
 add `--pretty` for indented output. It re-uses `einvoice.validate` verbatim
 (no rule logic of its own, zero deps). The full field-by-field contract and
 its `report_version`/`schema` versioning semantics are documented in
-[`REPORT-SCHEMA.md`](REPORT-SCHEMA.md) (and mirrored in the `REPORT_SCHEMA`
+[`REPORT-SCHEMA.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/REPORT-SCHEMA.md) (and mirrored in the `REPORT_SCHEMA`
 constant of `einvoice/report.py`).
 
 #### Batch / folder validation
@@ -1071,7 +1096,7 @@ xrechnung`, the console script to `en16931`.
 The CI gate above catches a bad invoice after it is pushed. To catch it one step
 earlier — at the commit itself — this repository ships a **provider-side hook
 manifest** at the repo ROOT
-([`.pre-commit-hooks.yaml`](../.pre-commit-hooks.yaml)) that
+([`.pre-commit-hooks.yaml`](https://github.com/verifyhash/verifyhash/blob/main/.pre-commit-hooks.yaml)) that
 [pre-commit](https://pre-commit.com) resolves **remotely**. Any repo can adopt
 the check with a `repos:` reference; nothing is copied or vendored in.
 
@@ -1168,7 +1193,7 @@ stop. The corpus and harness remain useful artifacts either way.
 
 Current status against this metric: **297 business rules** asserted by the
 engine (`python3 -m einvoice info --json` → `rule_count`; the per-rule
-inventory is [`COVERAGE.md`](COVERAGE.md)). That covers the EN 16931 core —
+inventory is [`COVERAGE.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/COVERAGE.md)). That covers the EN 16931 core —
 **219 implemented + 4 excluded + 0 missing = 223 official `BR-*` asserts**
 against each vendored CEN artifact, the same split in the UBL and the CII
 universe — plus the XRechnung CIUS/CVD/extension layer and the 21
@@ -1184,10 +1209,10 @@ vendor) is now the whole game.
 ## Licensing
 
 Everything in `einvoice/` is open source under
-[Apache-2.0](../LICENSE) — free for everyone, including commercial use and
+[Apache-2.0](https://github.com/verifyhash/verifyhash/blob/main/LICENSE) — free for everyone, including commercial use and
 integration into closed-source products, subject to the usual Apache-2.0
 conditions: keep the license text and the attribution in
-[`NOTICE`](NOTICE) with redistributions, and mark changed files.
+[`NOTICE`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/NOTICE) with redistributions, and mark changed files.
 
 Because Apache-2.0 already permits closed-source embedding for free, the
 optional **commercial license** does not sell permission or "compliance" —
@@ -1199,9 +1224,9 @@ convenience** at a flat, self-serve price:
 
 Both are one-time, with no contract to negotiate and no sales call. Buy or
 ask via **hello@verifyhash.com** (the private commercial contact); the
-self-serve page is the licensing page
-([`www/licensing/`](www/licensing/index.html), published at
-<https://verifyhash.com/einvoice/licensing/>). The checkout link is bound at
+self-serve page is the
+[licensing page](https://verifyhash.com/einvoice/licensing/) (generated by
+`gen_site.py` into `www/licensing/index.html`). The checkout link is bound at
 deploy from a single `CHECKOUT_URL` placeholder in `gen_site.py`; until it is
 set the page shows an honest "checkout opening shortly — email
 hello@verifyhash.com" line rather than a dead link. You never need the

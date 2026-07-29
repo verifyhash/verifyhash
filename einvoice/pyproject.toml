@@ -18,6 +18,44 @@ build-backend = "setuptools.build_meta"
 name = "verifyhash-einvoice"
 version = "0.2.7"
 description = "Zero-dependency EN 16931 / XRechnung (UBL + CII) e-invoice conformance validator — 297 business rules including the national BR-DE and BR-DEX CIUS/extension layers, each differential-tested to 0 divergences against the official Schematron within the implemented set; every fireable BR-CL-* code-list check is now implemented in both syntaxes; see CORRECTNESS.md for the honest remaining scope."
+# LONG DESCRIPTION — why README.md itself, with ABSOLUTE links (route A).
+#
+# The rendered PyPI body is the only discovery channel this package has that
+# needs no owner action, and up to 0.2.7 it was a 70.7 KB link graph of 49
+# RELATIVE markdown links (29 distinct targets) against exactly ONE absolute
+# link — and that one went to pre-commit.com. PyPI does not rewrite relative
+# markdown targets, so every one of them resolved against pypi.org and led
+# nowhere: the reader who wanted CORRECTNESS.md, the document this project's
+# whole honest-scope pitch defers to, clicked into a 404.
+#
+# TWO ROUTES EXISTED. (B) declare a second, PyPI-shaped readme here and keep
+# README.md repo-shaped. Rejected: it buys a tighter storefront at the price of
+# a 70 KB duplicate that must be GENERATED and drift-gated forever, and this
+# tree already carries a stack of generated-copy gates (attestation.json,
+# remediation_catalog.json, coverage_matrix.json, the whole www/ surface) —
+# one more is real cost for a cosmetic win. (A), taken here: rewrite README.md's own doc links to absolute
+# URLs. One document, zero drift surface, and the links then work from EVERY
+# render context — pypi.org, a vendored copy, a quoted excerpt — not just from
+# a GitHub tree view. Cost, stated honestly: a `git clone` reader can no longer
+# click a sibling doc offline, they land on github.com instead. That is the
+# smaller loss, because README.md is read on PyPI and on GitHub, not in $EDITOR.
+#
+# TARGET DISCIPLINE. verifyhash.com pages win over github.com blobs wherever
+# both cover the topic (the site is redeployed and byte-equal to committed);
+# repo-only material (COVERAGE.md, REPORT-SCHEMA.md, prove.py, ci/…) uses
+# .../blob/main/einvoice/…, the same spelling gen_site.py already emits.
+#
+# THE TWO ABSENT DOCS. `RECEIPT-VERIFICATION.md` and `QUICKSTART.de.md` are in
+# the working tree but NOT at `origin/main` (measured this run: `git cat-file -e
+# origin/main:einvoice/<f>` -> absent for exactly these two of the 29 targets).
+# They are therefore NAMED IN PLAIN TEXT in README.md, never linked — the same
+# reasoning that keeps a Changelog entry out of [project.urls] below. Relative
+# was not an option either: a relative link is just a 404 with extra steps on
+# pypi.org. Link them in the same change that pushes them.
+#
+# test_packaging.py::StorefrontMetadata pins all of this by parsing the `readme`
+# key below rather than assuming the filename, so switching to route B later
+# moves the contract with it.
 readme = "README.md"
 requires-python = ">=3.8"
 

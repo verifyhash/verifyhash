@@ -11,6 +11,103 @@ Versions here are the single source of truth together with
 (`__version__`); `test_release_discipline.py` fails the build if the three
 ever diverge.
 
+## [0.2.8] - 2026-07-29
+
+A **metadata-and-licence release**. Nothing about grading changed: the engine
+still fires 297 rules, the same rule ids on the same profiles, and **no rule,
+no exit code and no engine behaviour differs from 0.2.7** — `git diff
+a843431..HEAD -- einvoice/einvoice/` over the two commits this release packages
+is empty, so the validator inside the wheel is byte-identical to 0.2.7's. What
+changes is the *licence compliance* of the artifact and the *storefront page* a
+stranger meets before they install anything. Upgrade if you need the licence
+text in your dependency audit; there is no correctness reason to.
+
+### Fixed
+
+- **The Apache-2.0 licence text now travels inside the distribution.** Up to
+  and including the published 0.2.7 wheel, the only legal file in the artifact
+  was `NOTICE`: `dist-info/licenses/` held `NOTICE` alone, and
+  `importlib.metadata.metadata("verifyhash-einvoice")["License"]` came back
+  `None` while the classifiers asserted `License :: OSI Approved :: Apache
+  Software License`. Apache-2.0 **§4(a)** requires a copy of the License to
+  accompany each copy of the Work you distribute, so a redistributor auditing
+  our wheel found an assertion of Apache-2.0 and no licence to comply with — a
+  conformance product failing its own conformance check. `LICENSE` (the
+  201-line stock Apache-2.0 text, a byte-identical copy of the repo-root file,
+  asserted equal by `test_packaging.py`) is now shipped via
+  `license-files = ["LICENSE", "NOTICE"]` under `[tool.setuptools]`, and
+  `license = {text = "Apache-2.0"}` populates the `License:` metadata field
+  that was previously empty. `NOTICE` is listed explicitly because an explicit
+  `license-files` list *replaces* setuptools' default
+  `LICENSE*/NOTICE*/COPYING*` glob — omitting it would have silently stopped
+  shipping the file that was the only thing there before.
+- **`NOTICE` no longer points at a file the distribution does not contain.** It
+  used to end "The full license text is the LICENSE file at the repository
+  root", which was true of a `git clone` and false of every wheel. It now reads
+  "…travels with this distribution as the LICENSE file alongside this NOTICE",
+  which is now a checkable statement about the artifact in front of you.
+- **The `Development Status` classifier stopped underclaiming.** It said
+  `3 - Alpha`, and "Alpha" is the one word that disqualifies a validator from
+  somebody's compliance pipeline. Measured against `CORRECTNESS.md` §5 — the
+  most pessimistic thing this project says about itself anywhere — the honest
+  grade is `4 - Beta`: 297 differentially-proven rules, a published installable
+  wheel, a GitHub Action, 148 test files. §5's caveats (no XSD validation, no
+  signature verification, "corpus, not universe", not a legal conformance
+  certificate) are **scope** limits, not maturity limits. `5 -
+  Production/Stable` stays off until the API stops being free to move inside
+  0.x.
+
+### Added
+
+- **A navigable PyPI sidebar: eight labelled project URLs, up from one.** 0.2.7
+  declared exactly one — `Homepage`, pointing at the repository root. 0.2.8
+  declares `Homepage`, `Documentation`, `Why not KoSIT?`, `Browser validator`,
+  `Rule index`, `Licensing`, `Source` and `Issues`, six of them landing on the
+  product's own pages under `https://verifyhash.com/einvoice/`. A reader who
+  wants to try the validator in a browser, or to read why we think we beat the
+  incumbent, can now get there from the storefront in one click.
+- **Keywords, where the field was previously `None`.** Ten terms —
+  `xrechnung`, `en16931`, `e-rechnung`, `zugferd`, `factur-x`, `ubl`, `cii`,
+  `e-invoicing`, `conformance`, `validator` — each naming something the engine
+  genuinely handles. The pan-European network's name is deliberately **absent**
+  and its absence is enforced by `test_packaging.py`: what we vendor is a
+  21-assert KoSIT-published subset of that network's EN 16931 rules, not its
+  ruleset, transport or participant lookup, and using it as a search term would
+  sell a capability we do not have to the buyers least able to check.
+- **Five per-minor `Programming Language :: Python :: 3.x` classifiers** (3.8
+  through 3.12, mirroring `requires-python = ">=3.8"` and kept in step with it
+  by a test), plus `Natural Language :: English` / `:: German` — the German
+  CIUS layer, German violation messages and German site pages are a real part
+  of the product — and `Topic :: Software Development :: Quality Assurance`.
+
+### Changed
+
+- **The rendered long description's links are absolute, so they resolve.** PyPI
+  does not rewrite relative markdown targets. The 0.2.7 storefront body was a
+  ~71 KB page carrying 49 **relative** links across 29 distinct targets against
+  a single absolute one, so every internal link resolved against `pypi.org` and
+  404'd — including the link to `CORRECTNESS.md`, the document this project's
+  entire honest-scope pitch defers to. `README.md` now carries **54 absolute
+  links and zero relative ones**; product pages win over repo blobs wherever
+  both cover the topic. Stated cost: a reader with a local clone who clicks a
+  sibling doc now lands on github.com rather than opening the file offline.
+  That is the smaller loss — this README is read on PyPI and on GitHub, not in
+  an editor.
+
+### Honest limits of this release
+
+- `Source` and `Issues` still point at `github.com/verifyhash/verifyhash`, and
+  the tree that host currently serves is far older than this release (its
+  `einvoice/pyproject.toml` reads `version = "0.1.0"`). Until that history is
+  pushed, those two sidebar links land on a much earlier product; the six
+  `verifyhash.com` links do not have that problem. For the same reason
+  `CHANGELOG.md`, `RECEIPT-VERIFICATION.md` and `QUICKSTART.de.md` are **named
+  in plain text and never linked** from the storefront — a link to a file that
+  is not on the public branch is a 404 with extra steps.
+- The regenerated attestation digest differs from 0.2.7's because
+  `package.version` and the purl are inside the hashed body. That is the
+  version string changing, not the engine.
+
 ## [0.2.7] - 2026-07-24
 
 A packaging and robustness release for the INSTALLED artifact, plus one

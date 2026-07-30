@@ -1,10 +1,25 @@
-# REPUBLISH-PYPI — publish `verifyhash-einvoice` 0.2.7 to PyPI (owner/supervisor action, ~10 min)
+# REPUBLISH-PYPI — publish `verifyhash-einvoice` 0.2.8 to PyPI (owner/supervisor action, ~10 min)
 
 `verifyhash-einvoice` is already **live on PyPI**; the newest release the index
-serves is **0.2.6**. This is the runbook for the *next* upload: version
-**0.2.7**, which supersedes 0.2.6. The loop stages this packet but **never
-uploads** — publishing needs a PyPI account + API token that only the owner
-holds (a token is currently stored `0600` in the supervisor's `~/.pypirc`).
+serves is **0.2.7**, uploaded 2026-07-29. This is the runbook for the *next*
+upload: version **0.2.8**, which supersedes 0.2.7. The loop stages this packet
+but **never uploads** — publishing needs a PyPI account + API token that only
+the owner holds (a token is currently stored `0600` in the supervisor's
+`~/.pypirc`).
+
+**Why 0.2.8 is worth a sitting.** The published 0.2.7 wheel ships **no
+Apache-2.0 licence text**: measured on the installed image,
+`dist-info/licenses/` holds `NOTICE` alone,
+`importlib.metadata.metadata(...)["License"]` is `None`, and `NOTICE` itself
+points the reader at a `LICENSE` file the distribution does not contain — while
+the classifiers assert Apache-2.0. Apache-2.0 **§4(a)** requires a copy of the
+License to travel with each copy of the Work, so the artifact of a *compliance*
+product is currently non-compliant. 0.2.8 fixes exactly that (plus the
+storefront metadata: `4 - Beta` instead of `3 - Alpha`, eight project URLs
+instead of one, ten keywords instead of none, and a long description whose links
+resolve). Because PyPI versions are immutable, none of it reaches a single
+installer until 0.2.8 is uploaded. Engine behaviour is unchanged from 0.2.7 —
+see `CHANGELOG.md`.
 
 ## PyPI versions are IMMUTABLE — this is a BUMP, not a re-cut
 
@@ -33,10 +48,18 @@ instead of crash when the catalog is absent — and `test_wheel_remediation.py`
 guards both halves from a wheel-only import root.
 
 But **0.2.6 on PyPI stays broken forever**: it is immutable, so the fix cannot
-be shipped as a corrected 0.2.6. It can only ship as a *new* version. That is
-why `pyproject.toml` was bumped to 0.2.7 and why this runbook publishes 0.2.7
-rather than re-cutting 0.2.6. Anyone who already installed 0.2.6 keeps a broken
-wheel until they upgrade; `CHANGELOG.md` records the same reasoning.
+be shipped as a corrected 0.2.6. It can only ship as a *new* version — which is
+why `pyproject.toml` was bumped to 0.2.7 and 0.2.7 was published on 2026-07-29
+rather than 0.2.6 being re-cut. Anyone who already installed 0.2.6 keeps a
+broken wheel until they upgrade; `CHANGELOG.md` records the same reasoning.
+
+**The same rule now applies one version further along, and it is why this
+runbook publishes 0.2.8.** 0.2.7 is itself immutable now that it is served, so
+its missing in-artifact `LICENSE` (the Apache-2.0 §4(a) defect described in the
+intro above) cannot be corrected in place either. `pyproject.toml` and
+`einvoice/__init__.py` are already at 0.2.8, so this precondition is satisfied
+by following the runbook as written: publish 0.2.8, never re-cut 0.2.7. A repeat
+upload of 0.2.7 fails fast with `400 File already exists`.
 
 Corollary: **do not publish until the tree you are publishing is the fixed one.**
 Spending an immutable version on a still-broken build costs another version to
@@ -48,9 +71,9 @@ undo.
 |---|---|---|
 | Distribution name | `verifyhash-einvoice` | `pyproject.toml` `[project] name` |
 | Name availability on PyPI | **no longer available — the name is CLAIMED by this project.** The `GET https://pypi.org/pypi/verifyhash-einvoice/json` that returned HTTP **404** ("the name is free") at first staging on 2026-07-16 now returns HTTP **200**; the name was claimed by the first upload on 2026-07-22 | public read-only GET against the JSON API (the HTML project page is behind a bot-wall and is not a reliable check) |
-| Newest release PyPI serves | `0.2.6` | same JSON API, `info.version` |
-| Version to publish | `0.2.7` | `pyproject.toml` `[project] version`, matches `einvoice.__version__` (lock-step enforced by `test_packaging.py`) |
-| Relationship to 0.2.6 | **supersedes** it — 0.2.6 is immutable and stays downloadable forever | see the immutability section above |
+| Newest release PyPI serves | `0.2.7` (uploaded 2026-07-29) | same JSON API, `info.version` |
+| Version to publish | `0.2.8` | `pyproject.toml` `[project] version`, matches `einvoice.__version__` (lock-step enforced by `test_packaging.py`) |
+| Relationship to 0.2.7 | **supersedes** it — 0.2.7 is immutable and stays downloadable forever, licence-text defect and all | see the immutability section above |
 | Runtime dependencies | **none** (stdlib only) | `pyproject.toml` `dependencies = []`, enforced by `test_packaging.py` + `test_pypi_packaging.py` |
 | Console script | `einvoice = einvoice.cli:main` | `pyproject.toml` `[project.scripts]` |
 | Built artifact staged under `einvoice/dist/` | **none committed** — `einvoice/dist/` is gitignored; build it fresh at publish time — after the step-1 purge | steps 1 + 3 below |
@@ -62,7 +85,7 @@ than the `setuptools>=61` this project's PEP 621 `[project]` table requires — 
 no `build` module, so the PEP 517 build front-end either failed or produced a
 broken `UNKNOWN-0.0.0` wheel. That was resolved on 2026-07-22 (`python3.10-venv`
 plus a user-level `pip install --upgrade build twine 'setuptools>=61'`), and the
-build step of the command sequence below now emits correctly-named 0.2.7
+build step of the command sequence below now emits correctly-named 0.2.8
 artifacts. The
 `test_pypi_packaging.py` wheel-from-venv proof is consequently **no longer
 DEFERRED-ON-TOOLCHAIN** — it runs its full build → clean-venv →
@@ -179,13 +202,13 @@ python3 test_pypi_packaging.py
 python3 test_wheel_remediation.py
 
 # 3. build the sdist + wheel
-python3 -m build            # writes dist/verifyhash_einvoice-0.2.7-py3-none-any.whl
-                            #    and dist/verifyhash_einvoice-0.2.7.tar.gz
+python3 -m build            # writes dist/verifyhash_einvoice-0.2.8-py3-none-any.whl
+                            #    and dist/verifyhash_einvoice-0.2.8.tar.gz
 
 # 3b. PREFLIGHT THE BUILT WHEEL from a clean offline venv — the downstream half
 #     of the step-1 purge (see the section above). A FAIL here means DO NOT
 #     UPLOAD: the version is immutable and a bad artifact costs another one.
-bash tools/release-preflight.sh dist/verifyhash_einvoice-0.2.7-py3-none-any.whl
+bash tools/release-preflight.sh dist/verifyhash_einvoice-0.2.8-py3-none-any.whl
 
 # 4. sanity-check the metadata renders (catches a bad long_description)
 python3 -m twine check dist/*
@@ -194,15 +217,15 @@ python3 -m twine check dist/*
 python3 -m twine upload --repository testpypi dist/*
 #   then, in a scratch venv:
 #   python3 -m pip install --index-url https://test.pypi.org/simple/ verifyhash-einvoice
-#   einvoice --version   # -> einvoice 0.2.7
+#   einvoice --version   # -> einvoice 0.2.8
 
 # 6. upload to the real PyPI
 python3 -m twine upload dist/*
 ```
 
 `twine upload dist/*` ships both the wheel and the sdist built in step 3. It
-adds 0.2.7 alongside the existing releases; it does not — and cannot — touch the
-already-published 0.2.6 files.
+adds 0.2.8 alongside the existing releases; it does not — and cannot — touch the
+already-published 0.2.6 or 0.2.7 files.
 
 ## Post-publish verification (clean venv)
 
@@ -212,10 +235,10 @@ version explicitly so you are testing the upload you just made:
 
 ```bash
 python3 -m venv /tmp/vh-check && . /tmp/vh-check/bin/activate
-python3 -m pip install verifyhash-einvoice==0.2.7
+python3 -m pip install verifyhash-einvoice==0.2.8
 
 einvoice --version
-#   expected: einvoice 0.2.7
+#   expected: einvoice 0.2.8
 
 cd /tmp    # never verify from inside the checkout: cwd would shadow
            # site-packages and you would be testing the source tree
@@ -224,22 +247,36 @@ python3 -m einvoice.report --help                             # must exit 0
 python3 -m einvoice.report --explain BR-DE-1                  # exit 0 + rule text
 python3 -m einvoice.report --format sarif <any-invoice.xml>   # no traceback
 
+# THE CHECK THIS RELEASE EXISTS FOR — the Apache-2.0 text must be IN the
+# installed distribution, not merely asserted by a classifier:
+python3 -c "import importlib.metadata as m; d=m.distribution('verifyhash-einvoice'); \
+print(sorted(f.name for f in d.files if 'licenses' in str(f)))"
+#   expected: ['LICENSE', 'NOTICE']   — on 0.2.7 this printed ['NOTICE'] alone
+python3 -c "import importlib.metadata as m; \
+print(m.metadata('verifyhash-einvoice')['License'])"
+#   expected: Apache-2.0              — on 0.2.7 this printed None
+
 deactivate && rm -rf /tmp/vh-check
 ```
 
-The `--explain` and `sarif` checks are the whole point of this release: both
-crashed in 0.2.6. A violating invoice must also come back with a non-null
-`fix_hint` — for example an XRechnung invoice with `cbc:BuyerReference` removed
-yields a `BR-DE-15` violation carrying `title`, `fix_hint`,
-`location: "cbc:BuyerReference"` and `terms: ["BT-10"]`, where 0.2.6 returned
-`null` for the first three and `[]` for the last.
+The two licence checks are **the whole point of this release**: 0.2.7 asserted
+Apache-2.0 in its classifiers while shipping no copy of the License, which
+Apache-2.0 §4(a) requires to accompany the Work. The `--explain` and `sarif`
+checks are now regression checks rather than the headline — both crashed in
+0.2.6 and have worked since 0.2.7 — but re-run them anyway, because a stale
+build (see step 1) can reintroduce the 0.2.6 engine under a 0.2.8 label. A
+violating invoice must also come back with a non-null `fix_hint` — for example
+an XRechnung invoice with `cbc:BuyerReference` removed yields a `BR-DE-15`
+violation carrying `title`, `fix_hint`, `location: "cbc:BuyerReference"` and
+`terms: ["BT-10"]`, where 0.2.6 returned `null` for the first three and `[]` for
+the last.
 
 Optional extra checks:
 
 - `python3 -m pip show verifyhash-einvoice` — confirm `Requires:` is **empty**
   (the zero-dependency contract survived the round-trip).
 - `curl -s https://pypi.org/pypi/verifyhash-einvoice/json` — HTTP 200, and
-  `info.version` reads 0.2.7.
+  `info.version` reads 0.2.8.
 - Open <https://pypi.org/project/verifyhash-einvoice/> and confirm the
   description keeps the implemented-subset scope caveat (no full-standard
   overclaim).

@@ -7,13 +7,13 @@ at-a-glance record of *what artifact this is and where its parts come from*.
 | Field | Value |
 | --- | --- |
 | Package | `verifyhash-einvoice` (the pure-Python `einvoice` package) |
-| Version | `0.2.7` (source of truth: [`pyproject.toml`](pyproject.toml)) |
-| PURL | `pkg:pypi/verifyhash-einvoice@0.2.7` |
+| Version | `0.2.8` (source of truth: [`pyproject.toml`](pyproject.toml)) |
+| PURL | `pkg:pypi/verifyhash-einvoice@0.2.8` |
 | License | Apache-2.0 |
 | Runtime dependencies | **none** — Python 3 (>=3.8) stdlib only (`dependencies = []`) |
 | SBOM | [`sbom/bom.json`](sbom/bom.json), **CycloneDX 1.5** JSON (<https://cyclonedx.org/docs/1.5/json/>) |
 | SBOM generator | [`gen_sbom.py`](gen_sbom.py) — stdlib only, no network, deterministic output |
-| Distribution | **prepared for publication, not yet on PyPI at this version.** The newest release actually served by PyPI is `verifyhash-einvoice` 0.2.6, which this version supersedes; PyPI versions are immutable, so 0.2.6 stays available and uncorrectable forever and 0.2.7 will be a new upload (see [`REPUBLISH-PYPI.md`](REPUBLISH-PYPI.md)). Installable today from a source checkout / vendored copy. |
+| Distribution | **0.2.7 is published and is the release PyPI currently serves; 0.2.8 is prepared and not yet uploaded.** 0.2.7 was uploaded on 2026-07-29 and `info.version` on the JSON API reads `0.2.7`. This version, 0.2.8, supersedes it and will be a new upload (see [`REPUBLISH-PYPI.md`](REPUBLISH-PYPI.md)); PyPI versions are immutable, so 0.2.7 stays available and uncorrectable forever — which is why its missing in-artifact `LICENSE` can only be fixed by 0.2.8, never by re-cutting 0.2.7. Installable today from a source checkout / vendored copy, or as 0.2.7 from PyPI. |
 
 ## Rule corpus provenance
 

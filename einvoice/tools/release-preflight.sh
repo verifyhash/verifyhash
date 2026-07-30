@@ -60,7 +60,7 @@
 # Usage:
 #   bash einvoice/tools/release-preflight.sh <path-to-wheel> [expected-version]
 #
-#   <path-to-wheel>     e.g. dist/verifyhash_einvoice-0.2.7-py3-none-any.whl
+#   <path-to-wheel>     e.g. dist/verifyhash_einvoice-0.2.8-py3-none-any.whl
 #   [expected-version]  defaults to the [project] version in
 #                       einvoice/pyproject.toml (do not hard-code a version
 #                       here — it rots)
@@ -84,7 +84,7 @@ Usage: release-preflight.sh <path-to-wheel> [expected-version]
   REPUBLISH-PYPI.md.
 
   Example:
-    bash tools/release-preflight.sh dist/verifyhash_einvoice-0.2.7-py3-none-any.whl
+    bash tools/release-preflight.sh dist/verifyhash_einvoice-0.2.8-py3-none-any.whl
 USAGE
 }
 
@@ -325,7 +325,7 @@ for fmt in $FORMATS; do
 done
 if [ "$fmt_count" -ne 9 ]; then
   fail 3 formats-and-explain \
-    "the artifact declares $fmt_count report formats; 0.2.7 declares 9
+    "the artifact declares $fmt_count report formats; 0.2.8 declares 9
        ($FORMATS). A shrunken declared surface before an immutable upload is
        itself a stop sign — re-read it before overriding."
 fi

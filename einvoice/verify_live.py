@@ -40,7 +40,16 @@ the ``--base`` argument, so the checker cannot rot as the tree grows):
      of the rule pages the committed tree marks ``noindex`` must serve
      ``noindex`` live, and a deterministic bounded sample of the ones it
      leaves indexable must NOT;
-  5. byte-compare of every committed page against what is served.
+  5. byte-compare of every committed page against what is served;
+  6. ENGINE BUNDLE — the browser validator's executable Pyodide payload
+     (``/validate/engine/``), its inventory derived from the committed
+     ``manifest.json``'s own ``files`` list. The live manifest is compared
+     on three axes: top-level ``version``, the ``files`` list (both
+     directions), and — the primary one — the SEPARATE top-level
+     ``sha256`` MAP, name by name; a stale deploy typically ships an
+     identical files list with a few older digests, so a list-only diff
+     reports "identical" and sees nothing. Every declared file is then
+     fetched: 200, non-empty, and matching the live manifest's own claim.
 
 This is intentionally NOT wired into any test/gate suite: it depends on
 the network and on a live deploy existing, which are not properties of
@@ -99,9 +108,116 @@ def committed_pages():
     return sorted(pairs)
 
 
+# The browser validator's executable payload. ``committed_pages()`` walks
+# ``**/index.html`` only, so before this inventory existed the ONLY files on
+# the site that are actually EXECUTED (the Pyodide bundle the /validate/ page
+# loads) were invisible to live verification: a stale bundle serves
+# byte-identical HTML and is only visible in these digests.
+ENGINE_DIR = "validate/engine"
+ENGINE_MANIFEST_REL = ENGINE_DIR + "/manifest.json"
+
+
+def committed_engine_manifest() -> dict:
+    """Parsed contents of the committed ``www/validate/engine/manifest.json``.
+
+    Plain local file read, no network — the module stays import-pure exactly
+    as ``committed_pages()`` is. A missing or unparseable manifest returns
+    ``{}`` rather than raising, so importing the module can never blow up on
+    a tree that ships no engine bundle; main() turns the empty inventory into
+    a reported finding instead.
+    """
+    path = os.path.join(WWW, *ENGINE_MANIFEST_REL.split("/"))
+    try:
+        with open(path, "rb") as fh:
+            data = json.loads(fh.read().decode("utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def committed_engine_files(manifest: dict | None = None):
+    """(live sub-path, committed rel path) for every file the manifest declares.
+
+    DERIVED FROM THE MANIFEST'S OWN ``files`` list — never a hard-coded list
+    of names. The bundle's closure changes whenever the engine does (today 19
+    entries), and a literal list here would reproduce exactly the blindness
+    this inventory removes. ``manifest.json`` itself is NOT one of the
+    entries; main() fetches it separately.
+    """
+    if manifest is None:
+        manifest = committed_engine_manifest()
+    pairs = []
+    for name in _engine_names(manifest):
+        pairs.append(("/" + ENGINE_DIR + "/" + name, ENGINE_DIR + "/" + name))
+    return sorted(pairs)
+
+
+def _engine_names(manifest) -> set:
+    """The set of file NAMES a manifest's ``files`` list declares."""
+    if not isinstance(manifest, dict):
+        return set()
+    files = manifest.get("files")
+    if not isinstance(files, (list, tuple)):
+        return set()
+    return {n for n in files if isinstance(n, str) and n}
+
+
+def _engine_digests(manifest) -> dict:
+    """The name -> sha256 map a manifest declares (SEPARATE from ``files``)."""
+    if not isinstance(manifest, dict):
+        return {}
+    digests = manifest.get("sha256")
+    if not isinstance(digests, dict):
+        return {}
+    return {k: v for k, v in digests.items() if isinstance(k, str)}
+
+
+def compare_engine_manifests(committed, live):
+    """Compare two engine manifests. PURE — dicts in, findings out, no I/O.
+
+    Returns ``(missing, extra, digest_mismatches, version_mismatch)``:
+    names only the committed ``files`` list has; names only the live one
+    has; ``(name, expected_sha256, live_sha256)`` per name whose entry in
+    the SEPARATE top-level ``sha256`` MAP disagrees (``live_sha256`` is
+    ``None`` when the live side declares the file but no digest for it);
+    and ``None`` or ``(committed_version, live_version)``.
+
+    THE MAP COMPARISON IS THE PRIMARY ONE. A stale deploy typically ships an
+    IDENTICAL ``files`` list (same 19 names) with a handful of digests from
+    the older build — diffing only the list prints "identical, 0 mismatches"
+    and is precisely the bug this function exists to make impossible.
+    """
+    cnames = _engine_names(committed)
+    lnames = _engine_names(live)
+    missing = sorted(cnames - lnames)
+    extra = sorted(lnames - cnames)
+
+    cdig = _engine_digests(committed)
+    ldig = _engine_digests(live)
+    digest_mismatches = []
+    for name in sorted(cnames | set(cdig)):
+        want = cdig.get(name)
+        if want is None:
+            continue  # committed pins no digest for it — nothing to compare
+        if name not in lnames and name not in ldig:
+            continue  # already reported as missing; not a second finding
+        got = ldig.get(name)
+        if got != want:
+            digest_mismatches.append((name, want, got))
+
+    cver = committed.get("version") if isinstance(committed, dict) else None
+    lver = live.get("version") if isinstance(live, dict) else None
+    version_mismatch = None if cver == lver else (cver, lver)
+    return missing, extra, digest_mismatches, version_mismatch
+
+
 # (live sub-path relative to base, committed file relative to www/) —
 # the FULL committed surface, ~290+ pages; see committed_pages().
 BYTE_COMPARE = committed_pages()
+
+# The executable bundle, derived from the committed manifest's own files list.
+ENGINE_MANIFEST = committed_engine_manifest()
+ENGINE_FILES = committed_engine_files(ENGINE_MANIFEST)
 
 # paths that must serve 200 (same derived surface; byte-compare then also
 # proves content identity on top of the plain 200)
@@ -610,6 +726,110 @@ def main() -> int:
         if not same:
             failures.append("live share asset %s differs from committed www/%s "
                             "(stale card — redeploy needed)" % (sub, rel))
+
+    # 5. ENGINE BUNDLE — the only files on the site that are EXECUTED. The
+    #    /validate/ page loads this Pyodide payload and pins each file on its
+    #    sha256, so a partial deploy hard-stops the validator; a fully stale
+    #    one silently runs older rules while every HTML page byte-compares
+    #    clean (version strings of equal length do not change page size).
+    #    The digest MAP is the primary comparison: the files LIST stays
+    #    identical across builds and sees nothing.
+    print("== engine bundle (browser validator) live vs committed ==")
+    if not ENGINE_FILES:
+        failures.append(
+            "committed www/%s declares no files — the engine bundle inventory "
+            "is empty, so nothing about the executed browser validator is "
+            "verified" % ENGINE_MANIFEST_REL)
+        print("  MISSING committed www/%s (absent, unparseable, or empty "
+              "'files' list)" % ENGINE_MANIFEST_REL)
+
+    live_manifest = None
+    code, body = _get(base + "/" + ENGINE_MANIFEST_REL)
+    if code != 200 or not body:
+        failures.append(
+            "engine manifest /%s served %s (expected 200) — the browser "
+            "validator cannot verify its own bundle without it"
+            % (ENGINE_MANIFEST_REL, code))
+        print("  %s  fetch /%s" % (code, ENGINE_MANIFEST_REL))
+    else:
+        try:
+            parsed = json.loads(body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as e:
+            parsed = None
+            failures.append("live /%s did not parse as JSON: %s"
+                            % (ENGINE_MANIFEST_REL, e))
+            print("  UNPARSEABLE /%s (%d bytes)"
+                  % (ENGINE_MANIFEST_REL, len(body)))
+        if parsed is not None and not isinstance(parsed, dict):
+            failures.append("live /%s parsed as %s, expected a JSON object"
+                            % (ENGINE_MANIFEST_REL, type(parsed).__name__))
+            print("  UNPARSEABLE /%s (not a JSON object)" % ENGINE_MANIFEST_REL)
+        elif parsed is not None:
+            live_manifest = parsed
+
+    if live_manifest is not None:
+        missing, extra, digest_diffs, version_mismatch = \
+            compare_engine_manifests(ENGINE_MANIFEST, live_manifest)
+        if version_mismatch:
+            cver, lver = version_mismatch
+            print("  VERSION     committed=%r live=%r" % (cver, lver))
+            failures.append(
+                "engine bundle VERSION disagrees: committed %r, live %r — the "
+                "browser validator is executing a different build than the "
+                "committed tree (redeploy needed)" % (cver, lver))
+        else:
+            print("  VERSION     %r (agrees)" % (ENGINE_MANIFEST.get("version"),))
+        print("  FILES       committed=%d live=%d"
+              % (len(_engine_names(ENGINE_MANIFEST)),
+                 len(_engine_names(live_manifest))))
+        for name in missing:
+            print("  MISSING     %s (committed declares it, live does not)" % name)
+            failures.append(
+                "engine file %s is declared by the committed manifest but not "
+                "by the live one (incomplete deploy)" % name)
+        for name in extra:
+            print("  EXTRA       %s (live declares it, committed does not)" % name)
+            failures.append(
+                "live engine manifest declares %s, which the committed "
+                "manifest does not (stale file left behind)" % name)
+        for name, want, got in digest_diffs:
+            print("  DIFF        %s/%s" % (ENGINE_DIR, name))
+            print("              expected %s" % want)
+            print("              live     %s" % got)
+            failures.append(
+                "engine file %s sha256 disagrees: committed %s, live %s "
+                "(stale/partial deploy — redeploy needed)" % (name, want, got))
+        if not (missing or extra or digest_diffs):
+            print("  IDENTICAL   %d file(s), sha256 map agrees"
+                  % len(_engine_names(ENGINE_MANIFEST)))
+
+    # Each file the COMMITTED manifest declares must actually be served, and
+    # the served bytes must match the LIVE manifest's own declared digest —
+    # a self-inconsistent bundle is the partial-deploy case that makes the
+    # validator page refuse to start.
+    live_digests = _engine_digests(live_manifest)
+    for sub, rel in ENGINE_FILES:
+        code, live = _get(base + sub)
+        if code != 200 or not live:
+            failures.append(
+                "engine file %s served %s (expected 200 with a non-empty "
+                "body) — the browser validator hard-stops on a missing bundle "
+                "file" % (sub, code))
+            print("  %s  fetch %s" % (code, sub))
+            continue
+        name = rel.rsplit("/", 1)[-1]
+        served = hashlib.sha256(live).hexdigest()
+        declared = live_digests.get(name)
+        if declared is not None and declared != served:
+            print("  SELF-DIFF   %s" % sub)
+            print("              declared %s" % declared)
+            print("              served   %s" % served)
+            failures.append(
+                "engine file %s does not match the LIVE manifest's own sha256 "
+                "(declared %s, served %s) — the validator page pins each file "
+                "and will refuse to load" % (sub, declared, served))
+        else:
+            print("  200         %s (%d bytes)" % (sub, len(live)))
 
     print()
     if failures:

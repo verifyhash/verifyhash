@@ -42,6 +42,16 @@ under a socket trap so verify_live.py can never grow network-at-import):
       binding: a checker whose EXPECTED values were hard-coded, or whose
       derivation silently returned an empty set, would go green against any
       live origin at all, which is worse than no check.
+  (f) ENGINE BUNDLE (T-VHWEB.6): the ``/validate/engine/`` inventory —
+      the only files on the site that are EXECUTED — is derived from the
+      committed ``manifest.json``'s own ``files`` list, re-derived here by
+      a directory listing, and must agree, be >= 10 entries and hold a
+      well-formed sha256 for every name. The comparison is then proved
+      MUTATION-SENSITIVE ON A DIGEST: flipping ONE character of ONE
+      ``sha256`` value in an in-memory manifest copy must be reported
+      against that file NAME. That is the whole point — on the stale
+      deploy this task was written for the ``files`` list was identical
+      (19 == 19) while 4 digests disagreed.
 
 Standard library only, no network anywhere. Run:
     python3 test_verify_live_paths.py
@@ -49,6 +59,8 @@ Standard library only, no network anywhere. Run:
 
 from __future__ import annotations
 
+import copy
+import json
 import os
 import re
 import socket
@@ -486,6 +498,177 @@ class TestShareAssets(unittest.TestCase):
         self.assertFalse(tags["og:image"].startswith(base + "/"),
                          "the off-origin fixture must not look like our own "
                          "card, or this test proves nothing")
+
+
+class TestEngineBundle(unittest.TestCase):
+    """(f) the EXECUTABLE inventory — ``/validate/engine/`` (T-VHWEB.6).
+
+    WHY: the browser validator's Pyodide bundle holds the only files on the
+    site that are actually RUN. A stale deploy ships HTML that byte-compares
+    clean (``'0.2.7'`` and ``'0.2.9'`` are the same length, so even the sizes
+    match) while the German conformance report, the provenance footer and the
+    attestation digest silently run older code. The gap is visible ONLY in
+    the manifest's separate top-level ``sha256`` MAP: measured on the live
+    site this task was written for, the ``files`` LIST agreed on all 19
+    entries while 4 digests disagreed. Every assertion below is offline.
+    """
+
+    ENGINE_SUBDIR = os.path.join(WWW, "validate", "engine")
+
+    def independent_engine_names(self):
+        """The bundle's file names re-derived WITHOUT verify_live's helpers.
+
+        A plain directory listing minus ``manifest.json`` — a different
+        mechanism than the manifest-driven derivation under test, so
+        agreement is evidence rather than a tautology.
+        """
+        return {n for n in os.listdir(self.ENGINE_SUBDIR)
+                if n != "manifest.json"
+                and os.path.isfile(os.path.join(self.ENGINE_SUBDIR, n))}
+
+    # -- the inventory ----------------------------------------------------- #
+
+    def test_manifest_derivation_matches_an_independent_listing(self):
+        derived = {rel.rsplit("/", 1)[-1]
+                   for _sub, rel in verify_live.ENGINE_FILES}
+        self.assertEqual(
+            derived, self.independent_engine_names(),
+            "the manifest-derived engine file set disagrees with the "
+            "committed www/validate/engine/ directory listing — either the "
+            "manifest is stale or the derivation is broken")
+
+    def test_inventory_is_non_empty_and_substantial(self):
+        self.assertGreaterEqual(
+            len(verify_live.ENGINE_FILES), 10,
+            "the engine inventory holds %d entries — a decayed derivation "
+            "must not pass" % len(verify_live.ENGINE_FILES))
+        for sub, rel in verify_live.ENGINE_FILES:
+            self.assertEqual(sub, "/" + rel)
+            self.assertTrue(rel.startswith("validate/engine/"))
+            self.assertTrue(os.path.isfile(os.path.join(WWW, *rel.split("/"))),
+                            "engine file www/%s does not exist on disk" % rel)
+        # manifest.json is fetched separately, never as one of the entries
+        self.assertNotIn("/validate/engine/manifest.json",
+                         [s for s, _ in verify_live.ENGINE_FILES])
+
+    def test_manifest_declares_a_digest_for_every_file(self):
+        manifest = verify_live.committed_engine_manifest()
+        self.assertEqual(set(manifest["files"]), set(manifest["sha256"]),
+                         "the committed manifest's files list and sha256 map "
+                         "disagree — the map comparison would be partly blind")
+        for name, digest in manifest["sha256"].items():
+            self.assertRegex(digest, r"^[0-9a-f]{64}$",
+                             "%s carries a malformed sha256" % name)
+
+    def test_no_hard_coded_file_names_in_the_source(self):
+        with open(os.path.join(HERE, "verify_live.py"), encoding="utf-8") as fh:
+            src = fh.read()
+        for name in ("cli.py", "coverage.py", "report.py", "rules_xrechnung.py"):
+            self.assertNotIn(
+                '"%s"' % name, src,
+                "verify_live.py hard-codes the engine file %r — the inventory "
+                "must come from the manifest's own files list, or it goes "
+                "blind the moment the bundle changes" % name)
+
+    # -- the comparison is MUTATION-SENSITIVE ON A DIGEST ------------------ #
+
+    def committed_manifest_copy(self):
+        with open(os.path.join(WWW, "validate", "engine", "manifest.json"),
+                  encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def test_identical_manifests_compare_clean(self):
+        committed = self.committed_manifest_copy()
+        missing, extra, digests, version = verify_live.compare_engine_manifests(
+            committed, copy.deepcopy(committed))
+        self.assertEqual((missing, extra, digests, version), ([], [], [], None))
+
+    def test_one_flipped_digest_character_is_reported_by_name(self):
+        """THE POINT: a name-only comparison reproduces the bug it pins."""
+        committed = self.committed_manifest_copy()
+        live = copy.deepcopy(committed)
+        target = sorted(live["sha256"])[0]
+        original = live["sha256"][target]
+        live["sha256"][target] = ("1" if original[0] != "1" else "2") + original[1:]
+        self.assertNotEqual(live["sha256"][target], original)
+        # the files LIST is untouched and identical — exactly the live case
+        self.assertEqual(sorted(live["files"]), sorted(committed["files"]))
+
+        missing, extra, digests, version = verify_live.compare_engine_manifests(
+            committed, live)
+        self.assertEqual(missing, [], "no name went missing in this mutation")
+        self.assertEqual(extra, [])
+        self.assertIsNone(version, "only a digest was mutated")
+        self.assertEqual([name for name, _want, _got in digests], [target],
+                         "flipping one character of %s's sha256 must be "
+                         "reported against that file name" % target)
+        name, want, got = digests[0]
+        self.assertEqual(want, original)
+        self.assertEqual(got, live["sha256"][target])
+
+    def test_several_flipped_digests_are_all_reported(self):
+        committed = self.committed_manifest_copy()
+        live = copy.deepcopy(committed)
+        targets = sorted(live["sha256"])[:4]
+        for name in targets:
+            live["sha256"][name] = "0" * 64
+        _missing, _extra, digests, _version = \
+            verify_live.compare_engine_manifests(committed, live)
+        self.assertEqual([n for n, _w, _g in digests], targets)
+
+    def test_version_only_mutation_is_reported_as_a_version_mismatch(self):
+        committed = self.committed_manifest_copy()
+        live = copy.deepcopy(committed)
+        live["version"] = str(committed["version"]) + "-stale"
+        missing, extra, digests, version = verify_live.compare_engine_manifests(
+            committed, live)
+        self.assertEqual((missing, extra, digests), ([], [], []))
+        self.assertEqual(version, (committed["version"], live["version"]),
+                         "a version disagreement must be its own finding, "
+                         "never swallowed by an otherwise-clean bundle")
+
+    def test_a_dropped_name_is_reported_as_missing_not_as_a_digest_diff(self):
+        committed = self.committed_manifest_copy()
+        live = copy.deepcopy(committed)
+        dropped = sorted(live["files"])[0]
+        live["files"] = [n for n in live["files"] if n != dropped]
+        del live["sha256"][dropped]
+        missing, extra, digests, _version = \
+            verify_live.compare_engine_manifests(committed, live)
+        self.assertEqual(missing, [dropped])
+        self.assertEqual(extra, [])
+        self.assertEqual(digests, [],
+                         "a missing file must be reported once, not twice")
+
+    def test_comparison_degrades_on_junk_input_instead_of_raising(self):
+        """Offline / half-served manifests must not traceback."""
+        committed = self.committed_manifest_copy()
+        for junk in ({}, {"files": None}, {"files": [], "sha256": "nope"},
+                     {"version": None}):
+            missing, extra, digests, version = \
+                verify_live.compare_engine_manifests(committed, junk)
+            self.assertEqual(sorted(missing), sorted(committed["files"]))
+            self.assertEqual(extra, [])
+            self.assertEqual(digests, [])
+            self.assertIsNotNone(version)
+
+    # -- wiring ------------------------------------------------------------ #
+
+    def test_phase_is_wired_into_main(self):
+        with open(os.path.join(HERE, "verify_live.py"), encoding="utf-8") as fh:
+            src = fh.read()
+        body = src.split("def main(", 1)[1]
+        for token in ("ENGINE_FILES", "compare_engine_manifests",
+                      "ENGINE_MANIFEST_REL"):
+            self.assertIn(token, body,
+                          "main() never uses %s — the engine bundle would go "
+                          "unverified on every deploy" % token)
+        self.assertIn("engine bundle", body,
+                      "main() prints no engine-bundle section header")
+        # every engine finding rides the existing failures list / rc=1 path
+        self.assertGreaterEqual(
+            body.count("failures.append"), 20,
+            "engine findings must be appended to the existing failures list")
 
 
 if __name__ == "__main__":

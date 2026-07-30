@@ -15,7 +15,7 @@ several of them quote smaller rule counts than the engine now carries; every
 such place is labelled as a snapshot where it appears.
 
 The engine asserts **297 business rules** in total (`python3 -m einvoice info
---json` → `"rule_count": 297`, package version 0.2.8). Those 297 rule ids come
+--json` → `"rule_count": 297`, package version 0.2.9). Those 297 rule ids come
 from three non-overlapping registries:
 
 | Layer | Live count | Registry |

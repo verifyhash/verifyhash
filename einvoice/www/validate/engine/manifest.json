@@ -21,7 +21,7 @@
     "validate.py"
   ],
   "sha256": {
-    "__init__.py": "6920ab7944f40ae07c12fa6017bab107d4b7d583fa8a91a1763531fec54186f8",
+    "__init__.py": "72ec0bb4f529ef72a6f620ffe13431a94d3749b8b5078726e0f948ceb198ca7f",
     "_xmlsec.py": "35afa2a1c5e26cb228ab5c6061216e2d05e99da943a028dc997dcd67c882ff6a",
     "cli.py": "9803495a9d3bef147ac64143ef0133f26ee52489b05a12da5d077a43e085f040",
     "codelists.py": "5ff19ec7a24be7c65734d7312a9f7e1b4739ce4645fb71a2dae027e03d8a6ad7",
@@ -41,5 +41,5 @@
     "syntax_binding_eval.py": "d79cc3f4b157b17d2a72dcf4ed6aa7278745ed4b3adbb0e414003bdb0d0b2c21",
     "validate.py": "ac785c7cd5e17de08b9f501a508e6b41f294742962080561c2e519c68585d994"
   },
-  "version": "0.2.8"
+  "version": "0.2.9"
 }

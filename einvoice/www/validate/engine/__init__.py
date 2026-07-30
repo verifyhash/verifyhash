@@ -38,7 +38,7 @@ from .validate import validate_file, validate_root, Result  # noqa: F401
 from .parser import NotWellFormed  # noqa: F401
 
 #: Kept in lock-step with ``pyproject.toml`` (test_packaging.py enforces it).
-__version__ = "0.2.8"
+__version__ = "0.2.9"
 
 #: The supported, back-compat public API. Exactly these nine names are the
 #: embedding contract documented in API.md; ``test_api_example.py`` guards it.

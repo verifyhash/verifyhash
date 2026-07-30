@@ -11,18 +11,123 @@ Versions here are the single source of truth together with
 (`__version__`); `test_release_discipline.py` fails the build if the three
 ever diverge.
 
-## [0.2.8] - 2026-07-29
+## [0.2.9] - 2026-07-30
 
-A **metadata-and-licence release**. Nothing about grading changed: the engine
-still fires 297 rules, the same rule ids on the same profiles, and **no rule,
-no exit code and no engine behaviour differs from 0.2.7** — `git diff
-a843431..HEAD -- einvoice/einvoice/` over the two commits this release packages
-is empty, so the validator inside the wheel is byte-identical to 0.2.7's. What
-changes is the *licence compliance* of the artifact and the *storefront page* a
-stranger meets before they install anything. Upgrade if you need the licence
-text in your dependency audit; there is no correctness reason to.
+A **reporting and licence release**, and the first since 0.2.7 that changes
+what the tool puts in front of a human.
+
+**It supersedes 0.2.8, which was cut on disk on 2026-07-29 and never
+uploaded.** There is nothing to choose between them: 0.2.8's entire
+storefront-and-licence payload is folded into this entry (the Apache-2.0
+`LICENSE` inside the wheel, `Development Status :: 4 - Beta`, eight project
+URLs, ten keywords, absolute links in the rendered long description), and no
+`0.2.8` artifact exists on PyPI to be confused with it. Version numbers are
+cheap; a published wheel whose changelog understates what it contains is not,
+which is the whole reason this is 0.2.9 and not a re-cut of 0.2.8.
+
+**Grading is unchanged.** The engine still fires 297 rules, the same rule ids
+on the same profiles; no rule was added, removed or altered and no exit code
+moved. What moved is the *report*: the German HTML document is now genuinely
+German, every HTML report carries a footer naming the build that wrote it, and
+`--explain` stops being a dead end. Two ranges, both pinned to real commits so
+they still mean the same thing next year:
+
+```
+git diff --stat a843431..f76293f -- einvoice/einvoice/   # the 0.2.8 half
+git diff --stat f76293f..e311cda -- einvoice/einvoice/   # the 0.2.9 half
+```
+
+The first touches exactly two files — `__init__.py` and `attestation.json` —
+and in both the only change is the version string, which is why 0.2.8 was
+honestly described as metadata-and-licence-only: the two commits it packaged,
+`c7f83d3` (PyPI metadata + shipping the Apache-2.0 text) and `a51b02b`
+(absolute links in the long description), changed no validator code at all.
+The second is 775 insertions across `cli.py` and `report.py` over six commits
+— `544753e`, `b507af9`, `6c8fdab`, `a2cc849`, `d8fb83f`, `e311cda` — and that
+is the work described below.
+
+### Added
+
+- **German HTML conformance reports are actually in German now.** `--format
+  html --lang de` already produced a German document shell, but every finding
+  inside it still showed the English rule title and the English fix hint,
+  while a chrome line told the reader the rule text "stays English" — for
+  rules where we ship German, that line was simply false. `build_html` now
+  renders the remediation catalog's committed `title_de` and `fix_de` using
+  the same precedence `--explain` uses (`entry.get("title_de") or title`), and
+  drops the `lang="en"` marker only where a German string really replaced the
+  English one. Mixed-language findings are still marked as such, per field, so
+  the document never claims to be more German than it is.
+- **Per-rule provenance on every German string.** German in this product comes
+  from two very different places, and lumping them together would be the
+  dishonest simplification. Each German finding now carries one line, drawn
+  verbatim from a single map so the two wordings cannot drift: either
+  *"title/requires = official KoSIT XRechnung `<sch:assert>` text (verbatim);
+  fix = project translation"*, or *"project-authored translation of the
+  English wording; no official German text exists for this rule, so 'requires'
+  stays English"*. A German auditor can tell, for the rule in front of them,
+  whether they are reading the standard or reading us.
+- **A provenance footer on the HTML report: which build wrote this
+  document.** A conformance report that gets filed, attached to a ticket or
+  produced to an auditor two years later has to say what checked the invoice.
+  The footer lists the engine version, the asserted rule count and the full
+  attestation digest, all read from the same payload `einvoice info` prints —
+  nothing is hard-coded. It stays chrome-invariant: no timestamp, no
+  filesystem path, nothing that differs between two runs of the same build
+  over the same bytes, so two reports of the same invoice still diff clean.
+- **A check instruction that names one real command.** The footer ends with
+  *"How to check what is listed above: `einvoice info --json` prints the same
+  engine facts — version, rule count and attestation digest — for the build
+  installed on your own machine"*, and in the German document the same
+  sentence in German. It deliberately names **no count**: a row that cannot be
+  sourced is omitted rather than filled with a placeholder, and the in-browser
+  bundle can source exactly one of the three, so "check these three values"
+  would have been false on the one surface a stranger reaches without
+  installing anything. A differing attestation digest means a different build,
+  not a different invoice — the footer says so.
+- **`--explain` links the rule's canonical page instead of ending.** The block
+  now closes with `rule page: <url>` in both languages, built by the same
+  single URL builder the text report and the site generator use and keyed on
+  the canonical rule id, so a lowercase `--explain br-de-15` still links
+  correctly. The line is emitted only for rules that are actually catalogued,
+  so it can never point at a 404.
+- **An English-language pointer at the German text.** When — and only when —
+  the catalog really holds German for that rule, the English `--explain` block
+  adds `in German: einvoice --explain <ID> --lang=de`. Rules with no German
+  entry stay silent rather than advertising a translation that does not exist.
+
+### Changed
+
+- **The CI on-ramp captures its baseline with the entry point that can
+  actually be checked.** All four copy-paste recipes (`ci/README.md`,
+  `ci/github-actions.yml`, `ci/gitlab-ci.yml`, `ci/validate-invoices.sh`) now
+  capture with `python3 -m einvoice.report --profile xrechnung --format json`
+  instead of `einvoice validate --json`. The reason is the next bullet: only
+  the former emits `profile`, and without `profile` the baseline gate can
+  merely *note* a profile mismatch instead of refusing it.
+- **The two `--format json` shapes are documented as the different documents
+  they are.** `einvoice validate --json` and `python3 -m einvoice.report
+  --format json` were described as interchangeable; they are not. The console
+  script's JSON carries `source`, `valid`, `violation_count`, `violations` and
+  the `syntax_bindings` block, but **not** the five fields
+  `einvoice.report --format json` adds — `schema`, `report_version`,
+  `profile`, `fatal_count`, `warning_count` — so it is not the versioned
+  `einvoice-conformance-report/v1` envelope, and three surfaces that promised
+  it was have been corrected. The asymmetry is deliberate and stays:
+  `OUTPUT_FORMATS` is frozen on the shape that shipped before that envelope
+  existed, so no byte moves under a pipeline already parsing it.
+- **`--format html` honours `--lang`, and the seven machine formats
+  deliberately do not.** The HTML document's `<html lang>` now tells the truth
+  about the document it labels. `json`, `junit`, `sarif`, `gitlab`, `github`,
+  `azure` and `badge` are pinned language-neutral on purpose: a machine
+  document whose field values change language between runs is a parsing
+  hazard, not a feature. `report.py`'s docstring used to claim otherwise; it
+  no longer does.
 
 ### Fixed
+
+*The three items below are the licence-compliance work first cut as 0.2.8. They
+are not new to this release; they are new to anything you can `pip install`.*
 
 - **The Apache-2.0 licence text now travels inside the distribution.** Up to
   and including the published 0.2.7 wheel, the only legal file in the artifact
@@ -57,11 +162,11 @@ text in your dependency audit; there is no correctness reason to.
   Production/Stable` stays off until the API stops being free to move inside
   0.x.
 
-### Added
+### Added — the PyPI storefront (also first cut as 0.2.8)
 
 - **A navigable PyPI sidebar: eight labelled project URLs, up from one.** 0.2.7
-  declared exactly one — `Homepage`, pointing at the repository root. 0.2.8
-  declares `Homepage`, `Documentation`, `Why not KoSIT?`, `Browser validator`,
+  declared exactly one — `Homepage`, pointing at the repository root. This
+  release declares `Homepage`, `Documentation`, `Why not KoSIT?`, `Browser validator`,
   `Rule index`, `Licensing`, `Source` and `Issues`, six of them landing on the
   product's own pages under `https://verifyhash.com/einvoice/`. A reader who
   wants to try the validator in a browser, or to read why we think we beat the
@@ -80,7 +185,7 @@ text in your dependency audit; there is no correctness reason to.
   CIUS layer, German violation messages and German site pages are a real part
   of the product — and `Topic :: Software Development :: Quality Assurance`.
 
-### Changed
+### Changed — the rendered long description (also first cut as 0.2.8)
 
 - **The rendered long description's links are absolute, so they resolve.** PyPI
   does not rewrite relative markdown targets. The 0.2.7 storefront body was a
@@ -104,9 +209,24 @@ text in your dependency audit; there is no correctness reason to.
   `CHANGELOG.md`, `RECEIPT-VERIFICATION.md` and `QUICKSTART.de.md` are **named
   in plain text and never linked** from the storefront — a link to a file that
   is not on the public branch is a 404 with extra steps.
-- The regenerated attestation digest differs from 0.2.7's because
-  `package.version` and the purl are inside the hashed body. That is the
-  version string changing, not the engine.
+- The regenerated attestation digest differs from 0.2.7's for two independent
+  reasons this time. `package.version` and the purl are inside the hashed
+  body, so the version bump alone would move it — but unlike 0.2.8, the engine
+  really did move as well (`cli.py` and `report.py`, per the pinned range
+  above). Do not read a digest change as cosmetic here.
+- **The in-browser validator bundle under `www/validate/engine/` changes with
+  this release, and it is not a version string.** `einvoice/report.py` and
+  `www/validate/engine/report.py` are byte-identical — check it with `cmp
+  einvoice/einvoice/report.py einvoice/www/validate/engine/report.py` — so
+  three of the six commits above rewrote the shipped browser engine too, and
+  its SHA-256 in `www/validate/engine/manifest.json` moved accordingly. That
+  directory has to be deployed as a whole; the page verifies its own manifest
+  pin and hard-stops on a partial copy.
+- The German report gives you German *rule titles and fix hints*, not a
+  German engine. Where no official KoSIT German text exists for a rule, the
+  `requires` field stays English on purpose and the finding says so — see the
+  per-rule provenance line above. This is a translation boundary, not a gap
+  we intend to paper over.
 
 ## [0.2.7] - 2026-07-24
 

@@ -2375,8 +2375,10 @@ h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
 .rule-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 a.rule-id { color: #0a4a7a; text-decoration-color: #9fc4de; }
 .note { color: #57606a; font-size: .85rem; margin: 1.25rem 0 0; }
-.note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  background: #eaeef2; border-radius: 4px; padding: .05rem .3rem; }
+/* The footer's provenance-check line names a command, so it needs the same
+   inline-code treatment as .note — one selector, not a second rule to drift. */
+.note code, footer code { font-family: ui-monospace, SFMono-Regular, Menlo,
+  monospace; background: #eaeef2; border-radius: 4px; padding: .05rem .3rem; }
 .sev { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
   padding: .1rem .5rem; border-radius: 999px; font-weight: 700; }
 .sev.fatal { background: #fce8e6; color: #7a1f16; }
@@ -2477,6 +2479,31 @@ _HTML_CHROME = {
         "provenance_engine": "Engine version",
         "provenance_rules": "Business rules asserted",
         "provenance_digest": "Attestation SHA-256",
+        # HOW THE RECIPIENT CHECKS THE ROWS ABOVE (T-VHRPTH.5). Printing a
+        # 64-hex digest and inviting trust in it, while telling nobody which
+        # command re-derives it, makes the footer decoration. `einvoice info
+        # --json` is the ONE documented reader of the same payload these rows
+        # come from (see `_provenance`), so it is the only command named here —
+        # no new flag, no new surface. Carries inline <code> markup exactly like
+        # `note` above and is therefore emitted WITHOUT `_h()`.
+        #
+        # COUNTS NOTHING, ON PURPOSE. `_provenance()` OMITS any row it cannot
+        # source, and the in-browser bundle ships one data file, so a report
+        # generated in a browser carries a single row. A sentence that said
+        # "these three values" would therefore be false on the one surface a
+        # stranger reaches without installing anything. The wording below is
+        # true for any subset: it names the facts the command prints, and
+        # points at "the rows above" as whatever this build could source.
+        "provenance_check": ("How to check what is listed above: <code>einvoice "
+                             "info --json</code> prints the same engine facts "
+                             "— version, rule count and attestation digest — "
+                             "for the build installed on your own machine. "
+                             "This footer lists whichever of those facts the "
+                             "build that wrote the report could source; where "
+                             "they match that output, this report came from "
+                             "the build you are running, and a differing "
+                             "attestation digest means a different build, not "
+                             "a different invoice."),
         # THE HONESTY SENTENCE. Deliberately the SAME claim the site already
         # publishes under the id `green-not-legal-conformance` (www/index.html,
         # generated from gen_site.py) — quoted, not re-authored, so the document
@@ -2530,6 +2557,25 @@ _HTML_CHROME = {
         "provenance_engine": "Engine-Version",
         "provenance_rules": "Geprüfte Geschäftsregeln (Regelzahl)",
         "provenance_digest": "Attestierungs-Hash (SHA-256)",
+        # Derselbe Hinweis auf Deutsch — der Bericht, den ein deutsches
+        # Unternehmen weiterleitet, muss die Prüfanleitung in der Sprache des
+        # Dokuments tragen. Der Befehl selbst wird nicht übersetzt (es gibt
+        # keine deutschen Flags); die Begriffe „Regelzahl“ und
+        # „Attestierungs-Hash“ sind die der Zeilen darüber. Wie im Englischen
+        # wird KEINE Anzahl genannt: `_provenance()` lässt jede Zeile weg, die
+        # dieser Build nicht ermitteln kann (im Browser-Bundle bleibt genau
+        # eine übrig), also muss der Satz für jede Teilmenge stimmen.
+        "provenance_check": ("So prüfen Sie die Angaben oben: <code>einvoice "
+                             "info --json</code> gibt dieselben Engine-Angaben "
+                             "— Version, Regelzahl und Attestierungs-Hash — "
+                             "für die Installation auf Ihrem eigenen Rechner "
+                             "aus. Dieser Fußbereich führt davon auf, was der "
+                             "Build ermitteln konnte, der den Bericht "
+                             "geschrieben hat; stimmt das mit dieser Ausgabe "
+                             "überein, stammt dieser Bericht aus demselben "
+                             "Build, den Sie ausführen. Ein abweichender "
+                             "Attestierungs-Hash bedeutet einen anderen Build, "
+                             "nicht eine andere Rechnung."),
         # Der amtliche deutsche Wortlaut derselben Aussage, die die Website
         # unter `green-not-legal-conformance` führt (www/de/index.html, erzeugt
         # von gen_site.py) — wörtlich übernommen, nicht neu formuliert und
@@ -3071,6 +3117,16 @@ def build_html(report, lang="en"):
             parts.append("<dt>%s</dt>" % _h(label))
             parts.append('<dd class="mono">%s</dd>' % _h(value))
         parts.append("</dl>")
+        # ONE line naming the command that reproduces whichever rows this build
+        # could source, on the RECIPIENT's install (T-VHRPTH.5). The string
+        # names no count, because the loop above emits only the keys
+        # `_provenance()` resolved — one row in the browser bundle, three from a
+        # full install. Emitted only inside this branch: a
+        # document that could source no provenance row has nothing to compare,
+        # and "check the values above" with no values above is noise. The
+        # string carries pre-escaped inline <code>, so no `_h()` here — the
+        # same contract as the `note` paragraph in the body.
+        parts.append("<p>%s</p>" % _chrome("provenance_check", doc_lang))
     # The honesty sentence is unconditional: it is true of a green and a red
     # result alike, and it is the one claim on the site that a downloaded report
     # most needs to carry with it.

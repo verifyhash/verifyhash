@@ -605,8 +605,17 @@ Three honest limits, all measured:
   console script keeps its own `en16931` default, so pass `--profile` explicitly
   whenever the two surfaces must agree.
 - **`--quiet` and `--lang` do nothing to a machine format.** The document *is*
-  the output (there is no human summary to suppress) and `--lang de` only ever
-  swapped the displayed summary string — exactly as both behave with `--json`.
+  the output (there is no human summary to suppress), and the seven machine
+  bodies — `json`, `junit`, `sarif`, `gitlab`, `github`, `azure`, `badge` — are
+  byte-identical with and without `--lang de`, exactly as both flags behave with
+  `--json`. The other two formats are *human* surfaces and do honour the flag:
+  `einvoice validate --profile xrechnung --lang de --format html invoice.xml`
+  writes a German report (German title, headings and labels, `<html lang="de">`,
+  and the official KoSIT German sentence for each rule that carries one — rule
+  titles and fix hints stay English, which the document says on its face), and
+  `--format text` swaps the per-finding message only. Which of the nine surfaces
+  the flag reaches is tabulated once, in
+  [`REPORT-FORMATS.md`](REPORT-FORMATS.md#language---lang-de).
 
 The sibling `python3 -m einvoice.report --format <fmt> <invoice.xml>` entry point
 still exists and still works; `--pretty` (indented JSON) and `--recurse` (an

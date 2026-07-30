@@ -103,17 +103,19 @@ Global flags:
                lang="de">`` so the declaration matches the content — while
                ``--format text`` swaps the message on each finding line. A
                finding whose rule has NO official German text stays English and
-               is marked ``[en]`` in the HTML, which also states in the document
-               that rule titles and fix hints come from the English remediation
-               catalog. On ``--explain`` the block additionally swaps in the
-               catalog's ``title_de`` / ``fix_de`` and prints a ``german`` line
-               naming the provenance of what it just showed (official KoSIT text
-               vs. project-authored translation) — see EXIT-CODES.md for the
-               measured coverage. ``--lang`` never affects ``--json`` output, any
-               machine format body (see ``--format``), rule ids, severities or
-               which rules fire — only displayed text, and nothing is translated
-               at run time: every German byte is a string already committed in
-               ``remediation_catalog.json``.
+               is marked ``[en]`` in the HTML; that fallback is about the assert
+               MESSAGE only — the German rule title and ``Behebung`` fix hint
+               still render, on all 297 catalogued rules, with ``de_source``
+               recording per rule whether that German is official KoSIT wording
+               or a project translation. On ``--explain`` the block additionally
+               swaps in the catalog's ``title_de`` / ``fix_de`` and prints a
+               ``german`` line naming the provenance of what it just showed
+               (official KoSIT text vs. project-authored translation) — see
+               EXIT-CODES.md for the measured coverage. ``--lang`` never affects
+               ``--json`` output, any machine format body (see ``--format``),
+               rule ids, severities or which rules fire — only displayed text,
+               and nothing is translated at run time: every German byte is a
+               string already committed in ``remediation_catalog.json``.
 
 Config file (opt-in defaults — see ``einvoice/config.py``):
     A ``.einvoice.toml`` in the current working directory, else a

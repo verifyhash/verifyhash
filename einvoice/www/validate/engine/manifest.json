@@ -33,7 +33,7 @@
     "receipt.py": "651b589100f1e908fdcfed4dcefba54d35dc07d258b204f48f595c50c00a8ee4",
     "remediation.py": "76df030cf0b43e4b192f4c3545349f9653327e5790fc4a35c67324e9f64c2e1b",
     "remediation_catalog.json": "1cab361168b127ea2f5100ddd86b2ddd84ac36ce8966bfde9c46f13db32597de",
-    "report.py": "3d55c565580d12b8f18ccf7265e8bdc057491c887ca880a53d33ca7bbe5d592b",
+    "report.py": "3b6ec2eda611c5f330e7fd105aa0d7c431ce3c8eb731cc1e39d5fea887bee79d",
     "rules.py": "53663b0b12a4b999c4f0bcd65165465f802003483beab0cb767eb2521e4d3842",
     "rules_peppol.py": "a6f0b48ce211fd3afd27b27c0a37adc2569ea21bc3e137e70141cfff432a9c33",
     "rules_xrechnung.py": "40cff6c773e039c655c7653860c059c94703d508d2ba937965000709a6ca3eb1",

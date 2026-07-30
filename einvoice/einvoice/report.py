@@ -2462,11 +2462,15 @@ _HTML_CHROME = {
         # The two provenance rows are never emitted in an ENGLISH document
         # (there is nothing to fall back from, and no translation to disclose);
         # they exist here as the reference wording every other row translates.
+        # This row states only the fact that holds for the WHOLE document. The
+        # interesting question — for THIS rule, is the German the official
+        # KoSIT wording or prose this project wrote? — has a different answer
+        # per rule (50 catalogued rules vs. 247), so it is answered on each
+        # finding from :data:`GERMAN_PROVENANCE` rather than averaged into one
+        # document-level sentence that would be wrong for most of the page.
         "provenance_note": ("Translated rule sentences are the official KoSIT "
                             "XRechnung Schematron text, quoted verbatim — "
-                            "nothing is machine-translated. Rule titles and "
-                            "fix hints come from the English remediation "
-                            "catalog and stay English."),
+                            "nothing is machine-translated."),
         "fallback_note": ("Rules with no official text in this language are "
                           "marked [en] and shown in the English original."),
         "fallback_marker": "[en]",
@@ -2542,9 +2546,7 @@ _HTML_CHROME = {
         "provenance_note": (
             "Die deutschen Regelsätze sind der amtliche KoSIT-Wortlaut der "
             "XRechnung-Schematron-Regel, Wort für Wort übernommen — es wird "
-            "nichts maschinell übersetzt. Regeltitel und Behebungshinweise "
-            "stammen aus dem englischen Remediation-Katalog und bleiben "
-            "englisch."),
+            "nichts maschinell übersetzt."),
         "fallback_note": (
             "Regeln ohne amtlichen deutschen Text sind mit [en] markiert und "
             "stehen im englischen Original."),
@@ -2793,7 +2795,7 @@ def build_html(report, lang="en"):
     in-browser validator page runs (``www/validate/index.html``, an English
     page) — is unchanged and still returns the exact English bytes it always
     did. ``lang="de"`` renders the German document the German mandate's users
-    actually need, and it changes THREE things and nothing else:
+    actually need, and it changes FIVE things and nothing else:
 
       * the ``<html lang=…>`` attribute, which now states the language really
         rendered instead of hard-coding ``en`` (a false declaration for a
@@ -2806,16 +2808,28 @@ def build_html(report, lang="en"):
         resolver ``einvoice validate --lang de`` uses for its text summary, so
         the two human surfaces show the identical German sentence for a rule
         and there is no second translation table to drift.
+      * each finding's rule TITLE and FIX HINT — the catalog's ``title_de`` and
+        ``fix_de``, which every catalogued rule carries and which
+        ``einvoice --explain --lang=de`` already prints, resolved with exactly
+        :func:`format_explain`'s precedence (a shipped German string wins; an
+        absent one leaves the English value AND its ``lang="en"`` marker);
+      * a PER-FINDING PROVENANCE line naming where that finding's German came
+        from, in the one wording :data:`GERMAN_PROVENANCE` already defines.
 
-    NOTHING IS TRANSLATED AT RUN TIME and no wording is invented for a rule.
-    Only ~50 of the fireable rules carry an official German ``message_de`` (the
-    BR-DE family's vendored KoSIT ``<sch:assert>`` text); a rule without one
-    keeps its ENGLISH message, that paragraph is marked ``lang="en"`` and
-    prefixed with a visible ``[en]``, and one note under the findings says so
-    and adds the honest limit that rule TITLES and FIX HINTS come from the
-    English remediation catalog and stay English. Rule ids, severities, counts,
-    positions and the exit code are language-independent facts and are
-    byte-identical in every language.
+    NOTHING IS TRANSLATED AT RUN TIME and no wording is invented for a rule:
+    every German byte is a lookup of a string ``gen_remediation.py`` committed.
+    The catalog ships a German title and fix hint for EVERY rule it covers, but
+    only ~50 of the fireable rules carry an official German ``message_de`` (the
+    BR-DE family's vendored KoSIT ``<sch:assert>`` text, verbatim); a rule
+    without one keeps its ENGLISH message, that paragraph is marked
+    ``lang="en"`` and prefixed with a visible ``[en]``, and a note under the
+    findings says so. Because "the standards body wrote this" and "we
+    translated this" are very different claims to make to a German tax
+    authority, the document does not average them: each finding states for its
+    own rule whether the German is the official KoSIT text or a translation
+    this project authored. Rule ids, severities, counts, positions and the exit
+    code are language-independent facts and are byte-identical in every
+    language.
 
     :param report: a dict as returned by :func:`build_report`.
     :param lang: ``"en"`` (default) or ``"de"``; any other value renders the
@@ -2949,6 +2963,43 @@ def build_html(report, lang="en"):
             if message_fallback:
                 saw_message_fallback = True
             fix_hint = v.get("fix_hint")
+            # GERMAN TITLE AND FIX HINT — AND WHERE THAT GERMAN CAME FROM.
+            # `gen_remediation.py` commits a `title_de` and a `fix_de` on every
+            # catalogued rule and `einvoice --explain --lang=de` has printed
+            # them for a while; this document was the last German surface still
+            # handing a German accountant an English instruction. The
+            # precedence is character-for-character `format_explain`'s
+            # (`entry.get("title_de") or title`): a shipped German string wins,
+            # an absent one leaves the English value AND its `lang="en"` marker
+            # exactly where they were. Nothing is translated at run time and no
+            # sentence is authored here — both values are dict lookups in the
+            # catalog `catalog_ids` already holds, so a finding costs no extra
+            # file read and a catalog-less install simply stays English.
+            title_lang_attr = _en_attr(doc_lang)
+            fix_lang_attr = _en_attr(doc_lang)
+            german_provenance = None
+            if doc_lang == "de":
+                entry = catalog_ids.get(rule) or {}
+                if entry.get("title_de"):
+                    title = entry["title_de"]
+                    title_lang_attr = ""
+                if entry.get("fix_de"):
+                    fix_hint = entry["fix_de"]
+                    fix_lang_attr = ""
+                # PER RULE, NEVER FLATTENED. Only the `kosit` entries carry the
+                # official KoSIT <sch:assert> wording; every other German
+                # string in the catalog is a translation this project wrote of
+                # its own English. One document-level sentence would have to
+                # pick one of those claims and be wrong about the rest of the
+                # page, so the disclosure rides on the finding it describes, in
+                # the SAME wording `--explain --lang=de` prints — one table
+                # (:data:`GERMAN_PROVENANCE`), not a second phrasing to drift.
+                # An unrecognised tag reports itself rather than being silently
+                # rounded to one of the two we understand.
+                de_source = entry.get("de_source")
+                german_provenance = GERMAN_PROVENANCE.get(
+                    de_source,
+                    "de_source %r — provenance not recognised" % (de_source,))
             terms = v.get("terms") or []
             field = v.get("field")
             location = v.get("location")
@@ -3003,15 +3054,17 @@ def build_html(report, lang="en"):
                     '<span class="sev %s">%s</span>'
                     % (_h(sev_class), _h(severity))]
             if title:
-                # The remediation catalog's titles are English prose. In a
-                # translated document they are tagged `lang="en"` so the
-                # document's own declaration stays true element by element (a
-                # screen reader keeps its English voice on them instead of
-                # reading English words with German phonemes); `fallback_note`
-                # states the same limit in words. In an English document this
-                # adds nothing, so the default bytes are unchanged.
+                # `title_lang_attr` is empty EXACTLY when the string above is
+                # really the catalog's German, and `lang="en"` only when the
+                # English original survived the lookup — so the document's own
+                # declaration stays true element by element (a screen reader
+                # keeps its English voice on the leftovers instead of reading
+                # English words with German phonemes) without ever marking
+                # German text as English. In an English document `_en_attr`
+                # returns "" as it always did, so the default bytes are
+                # unchanged.
                 head.append('<span class="title"%s>%s</span>'
-                            % (_en_attr(doc_lang), _h(title)))
+                            % (title_lang_attr, _h(title)))
             parts.append("<h2>%s</h2>" % "".join(head))
             # The position rides on the message line, exactly where the text
             # report puts it, and the helper's return is emitted VERBATIM
@@ -3040,10 +3093,13 @@ def build_html(report, lang="en"):
 
             rows = []
             if fix_hint:
-                # Same tagging as the title, and for the same reason: fix hints
-                # are English catalog prose in every language.
+                # Same source and same tagging rule as the title: the catalog's
+                # `fix_de` where it ships one — this is the line that actually
+                # tells the reader what to change, so it is the one that most
+                # needed to stop being English — and the English hint, still
+                # marked, where it does not.
                 rows.append((_chrome("label_fix", doc_lang), _h(fix_hint),
-                             False, _en_attr(doc_lang)))
+                             False, fix_lang_attr))
             if terms:
                 # BT/BG codes, XPaths and element names are language-neutral
                 # identifiers, so these three carry no lang tag in any language.
@@ -3063,6 +3119,17 @@ def build_html(report, lang="en"):
                                  % (' class="mono"' if mono else "",
                                     lang_attr, val))
                 parts.append("</dl>")
+            if german_provenance:
+                # THE HONESTY DISCLOSURE, attached to the rule it is about. It
+                # is English prose ABOUT German prose, so it carries `lang="en"`
+                # like every other English island in this document, and it is
+                # labelled with the same word (`german`) that the `--explain`
+                # block uses for the identical line, so a reader who has seen
+                # one surface recognises the other. Reuses the styled `.note`
+                # class rather than introducing a selector — the stylesheet is
+                # emitted in the English document too and must not move.
+                parts.append('<p class="note" lang="en">german: %s</p>'
+                             % _h(german_provenance))
             parts.append("</div>")
 
         if violations:
@@ -3077,9 +3144,12 @@ def build_html(report, lang="en"):
                 # THE PROVENANCE PARAGRAPH — the honest limits of this
                 # translation, in the document itself rather than only in our
                 # docs. `provenance_note` is emitted for EVERY translated
-                # document because both of its facts always hold (the German
-                # sentences are quoted KoSIT text, not our translation; titles
-                # and fix hints are English catalog prose in any language).
+                # document because the one fact it states always holds: a
+                # German rule sentence is quoted KoSIT text, never a run-time
+                # translation. It says nothing about titles and fix hints on
+                # purpose — those are German for every catalogued rule now, and
+                # WHICH German a rule got differs per rule, so that is stated
+                # on each finding instead of being generalised here.
                 # The `[en]` sentence is appended only when a marker is really
                 # on the page, so the note never explains something absent.
                 note = _chrome("provenance_note", doc_lang)

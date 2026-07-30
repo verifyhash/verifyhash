@@ -600,6 +600,33 @@ class HtmlHonoursLang(unittest.TestCase):
         self.assertIn("Behebung", doc)
         self.assertNotIn("Not conformant", doc)
         self.assertNotIn("How to fix", doc)
+        # THE INSTRUCTION ITSELF IS GERMAN. This is the whole point of a German
+        # report: the line that tells an accountant what to change must not be
+        # English prose under a German heading. Title and fix come from the
+        # catalog's title_de/fix_de verbatim, so no English catalog sentence
+        # survives anywhere in the document.
+        from einvoice.report import _remediation_catalog, GERMAN_PROVENANCE
+        cat = _remediation_catalog()
+        for rid in ("BR-DE-2", "BR-DE-15"):
+            entry = cat[rid]
+            self.assertIn('<span class="title">%s</span>'
+                          % _htmlmod.escape(entry["title_de"], quote=True), doc)
+            self.assertIn('<dd>%s</dd>'
+                          % _htmlmod.escape(entry["fix_de"], quote=True), doc)
+            self.assertNotIn(_htmlmod.escape(entry["fix"], quote=True), doc)
+        self.assertNotIn("Add the required element", doc)
+        self.assertNotIn('<span class="title" lang="en">', doc)
+        # PER-RULE PROVENANCE: every finding here is a `kosit` rule, so each
+        # says its title/requires is the official KoSIT assert while its FIX is
+        # still our translation — the distinction an adopter arguing with a
+        # German tax authority actually needs.
+        self.assertEqual({"kosit"},
+                         {cat[r]["de_source"] for r in
+                          ("BR-DE-2", "BR-DE-15", "BR-DE-TMP-32")})
+        marker = _htmlmod.escape(GERMAN_PROVENANCE["kosit"], quote=True)
+        self.assertEqual(3, doc.count(marker))
+        self.assertNotIn(
+            _htmlmod.escape(GERMAN_PROVENANCE["translation"], quote=True), doc)
 
     def test_english_default_did_not_drift(self):
         base = ["validate", HTML_DE_FIXTURE, "--profile=xrechnung",
@@ -647,9 +674,31 @@ class HtmlHonoursLang(unittest.TestCase):
         # Visible marker, and an element-level lang so the document's own
         # declaration stays true where the text is not German.
         self.assertIn('<p class="msg" lang="en">[en] ', doc)
-        # ...explained in the document, with the honest limit about titles.
+        # ...explained in the document.
         self.assertIn("mit [en] markiert", doc)
-        self.assertIn("Regeltitel und Behebungshinweise", doc)
+        # The fallback is about the rule SENTENCE only. The rule TITLE and the
+        # FIX HINT are German for every catalogued rule (the catalog ships
+        # title_de/fix_de on all 297), so they render German and — being
+        # German — carry NO lang="en" island, while the untranslated message
+        # above keeps its own. The document used to claim the opposite in
+        # words; that sentence is gone because it was false.
+        import html as _esc
+        from einvoice.report import _remediation_catalog, GERMAN_PROVENANCE
+        entry = _remediation_catalog()["BR-CL-01"]
+        self.assertNotIn('<span class="title" lang="en">', doc)
+        self.assertIn('<span class="title">%s</span>'
+                      % _esc.escape(entry["title_de"], quote=True), doc)
+        self.assertIn('<dd>%s</dd>' % _esc.escape(entry["fix_de"], quote=True),
+                      doc)
+        self.assertNotIn(_esc.escape(entry["fix"], quote=True), doc)
+        # ...and the document says, FOR THIS RULE, whose German that is. This
+        # one is a project translation, not KoSIT text, and the marker is the
+        # very string `--explain --lang=de` prints — one wording, not two.
+        self.assertEqual("translation", entry["de_source"])
+        self.assertIn(
+            _esc.escape(GERMAN_PROVENANCE["translation"], quote=True), doc)
+        self.assertNotIn(
+            _esc.escape(GERMAN_PROVENANCE["kosit"], quote=True), doc)
 
     def test_no_fallback_note_marker_sentence_when_nothing_fell_back(self):
         # Every finding of this fixture carries official German, so the note

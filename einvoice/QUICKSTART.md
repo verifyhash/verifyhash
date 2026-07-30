@@ -630,8 +630,12 @@ Three honest limits, all measured:
   `--json`. The other two formats are *human* surfaces and do honour the flag:
   `einvoice validate --profile xrechnung --lang de --format html invoice.xml`
   writes a German report (German title, headings and labels, `<html lang="de">`,
-  and the official KoSIT German sentence for each rule that carries one — rule
-  titles and fix hints stay English, which the document says on its face), and
+  and the official KoSIT German sentence for each rule that carries one; a rule
+  with no official German keeps its English sentence, visibly marked `[en]`,
+  while its title and its `Behebung` hint are German anyway, because the catalog
+  ships `title_de`/`fix_de` on all 297 rules and the report says per rule, from
+  the catalog's `de_source` field, whether that German is KoSIT text or a
+  project translation), and
   `--format text` swaps the per-finding message only. Which of the nine surfaces
   the flag reaches is tabulated once, in
   [`REPORT-FORMATS.md`](REPORT-FORMATS.md#language---lang-de).

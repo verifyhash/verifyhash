@@ -118,12 +118,22 @@ locale would score the whole file as resolved-plus-new and fail the build.
 Honest limit on the German HTML report: only **50 of 297** rules have official
 German text to quote (the KoSIT-authored `BR-DE-*` family — see
 [EXIT-CODES.md](EXIT-CODES.md#what---langde-actually-gives-you-measured-german-coverage)).
-A finding without one keeps its **English** sentence, prefixed with a visible
-`[en]` and tagged `lang="en"` on its own paragraph, and the document carries one
-note explaining the marker and stating that rule titles and fix hints come from
-our English catalog and stay English in every language. Nothing is machine- or
-hand-translated: the German rule sentences are the vendored KoSIT asserts
-verbatim, and only the document chrome above is prose this project authors.
+That limit is about the rule **sentence** (`message_de`) only. A finding without
+one keeps its **English** sentence, prefixed with a visible `[en]` and tagged
+`lang="en"` on its own paragraph, and the document carries one note explaining
+the marker; the `requires` line of `--explain --lang de` falls back to its
+English original the same way. Rule **titles and fix hints
+are German on all 297 catalogued rules**: `title_de` and `fix_de` are populated
+on every entry, and they are what a `--lang de` HTML report renders — the `<span
+class="title">` headline and the `Behebung` instruction under it are German even
+on a finding whose message fell back to `[en]`. Of the 297 German titles, **50**
+are the vendored KoSIT `<sch:assert>` wording verbatim and the other **247** are
+a project-authored translation of our own English catalog line; every one of the
+297 fix hints is project-authored, including the 50 KoSIT rules' hints. Which of
+the two you are reading is never left to guess: the catalog records it per rule
+in `de_source` (`kosit` vs `translation`) and the report prints that provenance
+in a note under each finding, so project wording is never passed off as the
+standard's. Nothing is machine-translated anywhere in this surface.
 
 `python3 -m einvoice.report` **refuses** `--lang` outside `--explain` (exit 1
 with a reasoned message) rather than swallowing it: that entry point's published

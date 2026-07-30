@@ -812,12 +812,18 @@ coverage is deliberately narrow, and stated here without spin:
   `lang="en"`, and one note in the document explains the marker — an English
   sentence sitting silently inside a `lang="de"` page is how a reader comes to
   believe they are holding the German legal wording.
-- **Rule titles and fix hints stay English in every language.** They come from
-  our own remediation catalog, not from the standard, so the German HTML report
-  tags them `lang="en"` and says so in the same note rather than passing our
-  wording off as the official text. (`--explain --lang de` does show the
-  catalog's `title_de` / `fix_de`, because that block prints a `german` line
-  naming their provenance.)
+- **Rule titles and fix hints are German on all 297 catalogued rules.** The
+  fallback above is about the assert *message* only. `title_de` and `fix_de` are
+  populated on every catalog entry, and they are what `--lang de` actually
+  renders — in the HTML report the headline and the `Behebung` instruction are
+  German even on a finding whose message fell back to `[en]`, and `--explain
+  --lang de` prints the same two fields. Of the 297 German titles, **50** are the
+  KoSIT `<sch:assert>` wording verbatim and the other **247** are a
+  project-authored translation of our own English catalog line; all 297 fix hints
+  are project-authored, the 50 KoSIT rules included. The artifact marks which is
+  which *per rule* — the catalog's `de_source` field is `kosit` or `translation`,
+  and both the report note and the `--explain` `german` line print that value —
+  so project wording is never passed off as the standard's.
 
 This official-German message is a **CLI / report human-message** feature: it is
 not injected into `--json`, and this task added no field to the generated

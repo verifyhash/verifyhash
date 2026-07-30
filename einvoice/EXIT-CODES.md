@@ -384,10 +384,16 @@ forwards to its accountant. The document chrome (title, heading, banner, the
 lang="de">` declares what is actually rendered. Each finding's sentence is the
 official KoSIT text for one of the 50; for the other 247 the **English** sentence
 survives, is prefixed with a visible `[en]`, is tagged `lang="en"` on its own
-paragraph, and the document itself says so in one note — which also states the
-honest limit that rule **titles and fix hints come from the English catalog and
-stay English** in every language, because those are our wording rather than the
-standard's. `--format text` swaps the same message on each finding line and
+paragraph, and the document itself says so in one note. That 50/297 split is
+about the assert **message** and nothing else: the rule **title** and the
+**fix hint** are German on all 297 rules, because the catalog ships `title_de`
+and `fix_de` on every entry and the report renders those, so a finding whose
+message is `[en]` still gets a German headline and a German `Behebung` line. The
+provenance of that German differs per rule and the report says which per rule:
+`de_source` is `kosit` on 50 entries (title quoted verbatim from the KoSIT
+assert) and `translation` on the other 247 (project-authored wording, no
+standards body involved), and every fix hint is project-authored even on the 50.
+`--format text` swaps the same message on each finding line and
 leaves the grep-stable `PASS`/`FAIL`/`ERROR` token, rule ids, severities and
 positions alone.
 

@@ -3814,9 +3814,20 @@ _VALIDATE_JS = r"""
     // projection of that same dict — never a second, JS-side renderer, which
     // is precisely how the CLI and the page would drift apart. The file is
     // not re-read and the engine is not re-run for the download.
+    // The engine echoes the CALLER'S spelling of a path back into every
+    // finding position (report.py's contract, pinned by test_report_html.py:
+    // a CLI user who typed ``broken.xml`` reads "insertion point
+    // broken.xml:28"). So Python is parked in the upload mount ONCE, here,
+    // and validateFile() hands it the BARE sanitised filename — the report a
+    // visitor forwards to their accountant then cites "Rechnung.xml:28"
+    // rather than "/work/Rechnung.xml:28", a Pyodide-internal mount point
+    // that exists on no machine on earth. One string, produced once by the
+    // engine; the returned HTML is never post-processed on the JS side.
     pyodide.runPython(
-      'import sys, json\n' +
+      'import sys, json, os\n' +
       'sys.path.insert(0, "/engine")\n' +
+      'os.makedirs("/work", exist_ok=True)\n' +
+      'os.chdir("/work")\n' +
       'from einvoice import report as _einvoice_report\n' +
       'def _browser_validate(path, profile):\n' +
       '    _rep = _einvoice_report.build_report(path, profile=profile)\n' +
@@ -3893,9 +3904,13 @@ _VALIDATE_JS = r"""
   //                                                          GOES here
   //
   // The bare "line N" forms are the ones those helpers degrade to when there
-  // is no usable source path, which is exactly this page's situation: the
-  // engine sees the file at an in-memory mount path (/work/…) that means
-  // nothing to the visitor, so printing it would be noise, not an address.
+  // is no usable source path, and that is what this on-page table wants: the
+  // filename is already stated ONCE, in the result heading above the table
+  // (renderReport is handed file.name), so repeating it on every row would be
+  // noise, not an address. (The DOWNLOADED report is the engine's own
+  // build_html() projection and does carry the name — mountEngine parks
+  // Python in /work so the engine is handed the visitor's own filename, not
+  // the mount path.)
   //
   // PRECEDENCE mirrors the CLI call sites' `_position_suffix(...) or
   // _insertion_point_suffix(...)`: a proven error site always wins over a
@@ -4056,11 +4071,13 @@ _VALIDATE_JS = r"""
       var safe = (file.name || "invoice").replace(/[^A-Za-z0-9._-]/g, "_");
       if (!safe) { safe = "invoice"; }
       pyodide.FS.mkdirTree("/work");
-      var path = "/work/" + safe;
-      pyodide.FS.writeFile(path, new Uint8Array(buf));
+      pyodide.FS.writeFile("/work/" + safe, new Uint8Array(buf));
       // ONE engine call; the payload carries the report dict AND the
-      // engine's own HTML projection of it (see mountEngine).
-      var payload = JSON.parse(validateFn(path, profileSel.value));
+      // engine's own HTML projection of it (see mountEngine). The argument is
+      // the BARE name, not "/work/" + safe: mountEngine() already chdir'd
+      // Python into the mount, and the engine quotes whatever spelling it was
+      // given into each finding's position.
+      var payload = JSON.parse(validateFn(safe, profileSel.value));
       renderReport(payload.report, file.name || safe, payload.html, safe);
       setStatus("Done — validated locally; nothing was uploaded.", "ok");
     } catch (e) {

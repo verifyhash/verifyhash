@@ -1881,6 +1881,25 @@ def _main(argv=None):
         leftover = args[1:]
         unknown_flags = [a for a in leftover if a.startswith("-") and a != "-"]
         offending = unknown_flags if unknown_flags else args[2:]
+        if not unknown_flags and args[0] == "validate":
+            # SURPLUS POSITIONALS ON ``validate`` ARE ALMOST ALWAYS THE BATCH
+            # COMMAND SPELLED THE NATURAL WAY. ``einvoice validate *.xml`` is
+            # what a shell user types first; until now it answered a bare
+            # ``error: unexpected argument 'fixed.xml'`` plus ten lines of
+            # USAGE and never said the word ``validate-batch`` once — the same
+            # dead end this module already diagnosed for ``--baseline``
+            # (see ENTRY_POINTS above): nobody decided it, it was simply never
+            # noticed. So say WHY and point somewhere, exactly like the
+            # ``--explain`` diagnostic. What does NOT change: the stream
+            # (stderr), the ``error: `` prefix, the exit code (EXIT_USAGE), the
+            # USAGE block, and ``validate`` itself, which still takes exactly
+            # ONE invoice — the aggregate-output contract stays
+            # ``validate-batch``'s alone.
+            sys.stderr.write(
+                "error: validate takes one invoice; use validate-batch to "
+                "check several in one run; unexpected argument %s\n%s\n"
+                % (", ".join(repr(a) for a in offending), USAGE))
+            return EXIT_USAGE
         sys.stderr.write(
             "error: unexpected argument %s\n%s\n"
             % (", ".join(repr(a) for a in offending), USAGE))

@@ -735,6 +735,109 @@ class HtmlChromeTable(unittest.TestCase):
                     self.assertNotIn("muss übermittelt werden", value)
 
 
+class GermanProvenanceFooter(unittest.TestCase):
+    """The provenance footer, German side (T-VHRPTH.2).
+
+    The German document is the one the German mandate's users actually forward,
+    so its provenance footer has to be GERMAN — an ``[en]`` marker on the footer
+    of a ``lang="de"`` document is the same false declaration ``--lang`` exists
+    to fix. Every expected value here is read at test time from the payload
+    ``einvoice info`` prints; nothing is a literal.
+    """
+
+    def _payload(self):
+        from einvoice.cli import _info_payload
+        return _info_payload()
+
+    def _footer(self, doc):
+        m = re.search(r"<footer>(.*?)</footer>", doc, re.S)
+        self.assertIsNotNone(m, "the document has no <footer>")
+        return m.group(1)
+
+    def test_de_footer_carries_the_same_three_engine_facts(self):
+        p = self._payload()
+        self.assertRegex(p.get("attestation_sha256") or "", r"^[0-9a-f]{64}$")
+        doc = _html("validate", HTML_DE_FIXTURE, "--profile=xrechnung",
+                    "--lang=de", "--format=html")
+        footer = self._footer(doc)
+        for value in (p["version"], str(p["rule_count"]),
+                      p["attestation_sha256"]):
+            self.assertIn(value, footer,
+                          "the German report omits %r — the facts are "
+                          "language-independent" % value)
+
+    def test_de_footer_prose_is_german_with_no_en_fallback_marker(self):
+        from einvoice.report import (_CHROME_FALLBACK_SUFFIX, _HTML_CHROME,
+                                     _h)
+        de = _HTML_CHROME["de"]
+        en = _HTML_CHROME["en"]
+        keys = ("provenance_engine", "provenance_rules", "provenance_digest",
+                "provenance_legal_note")
+        doc = _html("validate", HTML_DE_FIXTURE, "--profile=xrechnung",
+                    "--lang=de", "--format=html")
+        footer = self._footer(doc)
+        self.assertNotIn(_CHROME_FALLBACK_SUFFIX.strip(), footer,
+                         "the German footer self-labels [en]: a provenance "
+                         "string is missing from the de chrome row")
+        for key in keys:
+            with self.subTest(key=key):
+                self.assertIn(key, de, "de chrome row lacks %r" % key)
+                self.assertNotEqual(de[key], en[key],
+                                    "%r is not actually translated" % key)
+                self.assertIn(_h(de[key]), footer)
+                self.assertNotIn(_h(en[key]), footer)
+
+    def test_legal_note_reuses_the_sites_claim_in_each_language(self):
+        # ONE claim, two languages, both already published on the site under
+        # `green-not-legal-conformance` — quoted here, not re-authored, and
+        # never machine-translated.
+        from einvoice.report import _HTML_CHROME, _h
+        en = _HTML_CHROME["en"]["provenance_legal_note"]
+        de = _HTML_CHROME["de"]["provenance_legal_note"]
+        self.assertGreater(len(en), 40, en)
+        self.assertGreater(len(de), 40, de)
+        self.assertNotEqual(en, de)
+        # The German wording is the German one, phrase for phrase.
+        self.assertIn("keine implementierte fatale Regel hat ausgelöst", de)
+        self.assertIn("rechtsverbindlich konforme XRechnung", de)
+        self.assertIn("no implemented fatal rule fired", en)
+        self.assertIn("certified legally conformant", en)
+        # Each language's document carries ITS OWN sentence and not the other's.
+        de_doc = _html("validate", HTML_DE_FIXTURE, "--profile=xrechnung",
+                       "--lang=de", "--format=html")
+        en_doc = _html("validate", HTML_DE_FIXTURE, "--profile=xrechnung",
+                       "--format=html")
+        self.assertIn(_h(de), de_doc)
+        self.assertNotIn(_h(en), de_doc)
+        self.assertIn(_h(en), en_doc)
+        self.assertNotIn(_h(de), en_doc)
+
+    def test_the_de_claim_matches_the_published_german_page(self):
+        # Drift guard with teeth: the sentence in the report must still be the
+        # sentence the site publishes for `green-not-legal-conformance`. Read
+        # the claim span straight out of the generated German page.
+        import html as _htmlmod
+        from einvoice.report import _HTML_CHROME
+        page = os.path.join(HERE, "www", "de", "index.html")
+        with open(page, encoding="utf-8") as fh:
+            markup = fh.read()
+        m = re.search(
+            r'<span data-claim="green-not-legal-conformance">(.*?)</span>',
+            markup, re.S)
+        self.assertIsNotNone(m, "the German page no longer carries the claim")
+        published = _htmlmod.unescape(re.sub(r"<[^>]+>", "", m.group(1)))
+        note = _HTML_CHROME["de"]["provenance_legal_note"]
+        # The published span is one clause of a longer sentence, so compare on
+        # the substantive phrases rather than on punctuation the report restates.
+        for phrase in ("keine implementierte fatale Regel hat ausgelöst",
+                       "rechtsverbindlich konforme XRechnung"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, published,
+                              "the German site claim changed wording")
+                self.assertIn(phrase, note,
+                              "the report's German note drifted from the site")
+
+
 class TextFormatHonoursLang(unittest.TestCase):
     """``build_text`` — the other human surface in LOCALISED_FORMATS."""
 

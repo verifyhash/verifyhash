@@ -1069,5 +1069,228 @@ class UnknownFormatMentionsHtml(unittest.TestCase):
         self.assertIn("html", proc.stderr.lower(), proc.stderr)
 
 
+class HtmlProvenanceFooter(unittest.TestCase):
+    """The footer that makes the handed-over document attributable (T-VHRPTH.2).
+
+    WHY THIS IS A GATE. We sell a CONFORMANCE report. A downloaded HTML file
+    that does not say which engine produced it, how large the asserted rule set
+    was, or which attested build it came from is an anonymous document: the
+    recipient cannot cite it in a ticket, file it for an audit, or tell whether
+    it predates a fix. So the footer must carry the version, the rule count and
+    the FULL attestation digest.
+
+    EVERY ASSERTION BELOW IS DYNAMIC. Not one expected value is written as a
+    literal here — each is read from ``einvoice.cli._info_payload()``, the same
+    payload ``einvoice info --json`` prints, at test time. That is deliberate
+    and load-bearing: a literal in this file would become a second place the
+    version and the digest have to be hand-bumped, which is exactly the trap
+    ``test_release_discipline.py``'s three-version-sites contract exists to
+    prevent (and the reason no golden may capture this footer).
+    """
+
+    def _payload(self):
+        from einvoice.cli import _info_payload
+        return _info_payload()
+
+    def _footer(self, doc):
+        m = re.search(r"<footer>(.*?)</footer>", doc, re.S)
+        self.assertIsNotNone(m, "the document has no <footer>")
+        return m.group(1)
+
+    def test_payload_precondition_this_checkout_has_all_three_facts(self):
+        # A precondition, asserted so the tests below can never pass because
+        # the facts were missing and every row was legitimately omitted.
+        p = self._payload()
+        self.assertTrue(p.get("version"), "info payload has no version")
+        self.assertIsInstance(p.get("rule_count"), int)
+        self.assertGreater(p["rule_count"], 0)
+        self.assertRegex(p.get("attestation_sha256") or "",
+                         r"^[0-9a-f]{64}$",
+                         "a source checkout must self-report a 64-hex "
+                         "attestation digest")
+
+    def test_footer_carries_version_rule_count_and_digest(self):
+        p = self._payload()
+        doc = build_html(build_report(BASE, profile="xrechnung"))
+        footer = self._footer(doc)
+        for label, value in (("version", p["version"]),
+                             ("rule_count", str(p["rule_count"])),
+                             ("digest", p["attestation_sha256"])):
+            with self.subTest(fact=label):
+                self.assertIn(
+                    value, footer,
+                    "the %s the info payload reports is not in the HTML "
+                    "footer — the report cannot say what checked the "
+                    "invoice" % label)
+
+    def test_digest_is_printed_in_full_never_truncated(self):
+        # A shortened hash is not something the recipient can re-derive and
+        # compare, which is the only reason to print one. Assert the digest is
+        # the WHOLE value of its own element, and that no shorter prefix of it
+        # appears anywhere else in the document (an abbreviated second copy
+        # would be the failure mode this catches).
+        p = self._payload()
+        digest = p["attestation_sha256"]
+        doc = build_html(build_report(BASE, profile="xrechnung"))
+        self.assertEqual(len(digest), 64, digest)
+        self.assertRegex(
+            doc, r"<dd[^>]*>%s</dd>" % re.escape(digest),
+            "the digest is not the complete text of its own <dd> — it is "
+            "wrapped, truncated or annotated")
+        self.assertEqual(
+            doc.count(digest[:16]), 1,
+            "a truncated or duplicated copy of the attestation digest is in "
+            "the document; exactly one FULL occurrence is the contract")
+
+    def test_legal_note_is_the_sites_own_green_is_not_conformance_claim(self):
+        # Reused wording, not a second phrasing: the page that sells the tool
+        # and the document a buyer files must make the SAME promise about what
+        # a green result means.
+        from einvoice.report import _HTML_CHROME
+        note = _HTML_CHROME["en"]["provenance_legal_note"]
+        self.assertGreater(len(note), 40, note)
+        self.assertIn("no implemented fatal rule fired", note)
+        self.assertIn("certified legally conformant", note)
+        doc = build_html(build_report(BASE, profile="xrechnung"))
+        self.assertIn(_h(note), self._footer(doc))
+
+    def test_no_provenance_value_is_hard_coded_in_the_emitter(self):
+        # The single-source rule, checked against the emitter's own source: the
+        # version and the digest must not be spelled out in report.py at all.
+        import einvoice.report as R
+        src = inspect.getsource(R)
+        p = self._payload()
+        self.assertNotIn(p["attestation_sha256"], src,
+                         "the attestation digest is hard-coded in report.py")
+        self.assertNotIn(p["version"], src,
+                         "the engine version is hard-coded in report.py")
+        # ... and the helper really returns the info payload's own values.
+        prov = R._provenance()
+        self.assertEqual(prov.get("version"), p["version"])
+        self.assertEqual(prov.get("rule_count"), p["rule_count"])
+        self.assertEqual(prov.get("attestation_sha256"),
+                         p["attestation_sha256"])
+
+    def test_provenance_appears_in_no_machine_format(self):
+        # The digest is document provenance, NOT part of any report schema: a
+        # consumer parsing json/sarif/junit/gitlab/github/azure/badge/text must
+        # see exactly the fields it always saw.
+        from einvoice.report import REPORT_FORMATS
+        digest = self._payload()["attestation_sha256"]
+        formats = sorted(set(REPORT_FORMATS) | {"text"})
+        self.assertIn("html", formats, "precondition: html is a format")
+        for fmt in formats:
+            if fmt == "html":
+                continue
+            with self.subTest(format=fmt):
+                proc = _run(["--profile", "xrechnung", "--format", fmt, BROKEN])
+                self.assertNotIn(digest, proc.stdout,
+                                 "the attestation digest leaked into --format "
+                                 "%s" % fmt)
+                self.assertNotIn(digest, proc.stderr)
+
+    def test_unavailable_facts_omit_their_row_and_never_render_a_placeholder(
+            self):
+        # THE BROWSER CASE, made testable. The engine bundle ships the modules
+        # plus exactly ONE data file (remediation_catalog.json), so in Pyodide
+        # coverage_matrix.json and the attestation are genuinely absent and the
+        # payload's rule_count/digest are None. The footer must then be SHORTER,
+        # not wrong: 'None'/'unknown'/'0' each read as a fact.
+        import einvoice.cli as C
+        import einvoice.report as R
+        rep = build_report(BASE, profile="xrechnung")
+        real = C._info_payload
+        version = real()["version"]
+        try:
+            C._info_payload = lambda: {"version": version,
+                                       "rule_count": None,
+                                       "attestation_sha256": None}
+            doc = R.build_html(rep)
+        finally:
+            C._info_payload = real
+        footer = self._footer(doc)
+        self.assertIn(version, footer, "the version row should survive")
+        for placeholder in ("None", "null", "unknown", "n/a", "N/A"):
+            self.assertNotIn(placeholder, footer,
+                             "%r rendered as if it were a fact" % placeholder)
+        # The honesty sentence is unconditional — it does not depend on the
+        # engine artifacts being reachable.
+        self.assertIn(_h(R._HTML_CHROME["en"]["provenance_legal_note"]), footer)
+
+    def test_zero_rule_count_is_omitted_rather_than_printed(self):
+        # "0 rules asserted" is not a measurement worth publishing on a
+        # conformance report; an engine with nothing to attest says nothing.
+        import einvoice.cli as C
+        import einvoice.report as R
+        real = C._info_payload
+        try:
+            C._info_payload = lambda: {"version": "9.9.9-test",
+                                       "rule_count": 0,
+                                       "attestation_sha256": ""}
+            prov = R._provenance()
+        finally:
+            C._info_payload = real
+        self.assertEqual(prov, {"version": "9.9.9-test"}, prov)
+
+    def test_a_broken_payload_never_costs_the_report(self):
+        # Never a traceback: a footer is not worth failing a report that
+        # otherwise validated fine.
+        import einvoice.cli as C
+        import einvoice.report as R
+        rep = build_report(BASE, profile="xrechnung")
+
+        def boom():
+            raise RuntimeError("artifact unreadable")
+
+        real = C._info_payload
+        try:
+            C._info_payload = boom
+            self.assertEqual(R._provenance(), {})
+            doc = R.build_html(rep)
+        finally:
+            C._info_payload = real
+        self.assertIn("<footer>", doc)
+        _assert_no_external_subresource(self, doc)
+
+    def test_footer_is_still_timestamp_free_and_deterministic(self):
+        # RPT.8 still binds: provenance is about the ENGINE, not about when the
+        # file was made. (The whole-document guards live in HtmlDeterminism;
+        # this pins the claim on the footer specifically, where a "generated
+        # at ..." line is the tempting mistake.)
+        import datetime
+        doc = build_html(build_report(BASE, profile="xrechnung"))
+        footer = self._footer(doc)
+        self.assertNotIn(datetime.date.today().isoformat(), footer)
+        self.assertNotIn(str(datetime.date.today().year), footer)
+        self.assertEqual(
+            footer,
+            self._footer(build_html(build_report(BASE, profile="xrechnung"))))
+
+    def test_no_golden_file_carries_the_version_or_the_digest(self):
+        # THE GOLDEN TRAP. If a snapshot ever captured this footer, the next
+        # release would turn a version bump into a golden-editing session and
+        # break test_release_discipline.py's exactly-three-version-sites
+        # contract. Measured invariant: the digest is in NO golden, and every
+        # golden holding the version string is a receipt (receipts legitimately
+        # embed the tool version that wrote them).
+        import glob
+        p = self._payload()
+        goldens = sorted(glob.glob(os.path.join(HERE, "golden", "*")))
+        self.assertTrue(goldens, "precondition: golden/ is not empty")
+        version_holders = []
+        for path in goldens:
+            with open(path, "rb") as fh:
+                blob = fh.read()
+            self.assertNotIn(p["attestation_sha256"].encode(), blob,
+                             "the attestation digest is pinned in golden %s"
+                             % os.path.basename(path))
+            if p["version"].encode() in blob:
+                version_holders.append(os.path.basename(path))
+        for name in version_holders:
+            self.assertTrue(name.startswith("receipt-"),
+                            "golden %s now hand-carries the engine version" %
+                            name)
+
+
 if __name__ == "__main__":
     unittest.main()

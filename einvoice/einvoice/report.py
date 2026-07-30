@@ -2396,6 +2396,11 @@ dd.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .error-row .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-weight: 700; }
 footer { color: #57606a; font-size: .8rem; margin-top: 2rem; }
+footer p { margin: 0 0 .5rem; }
+/* The provenance rows reuse the finding <dl> grid but must not jump back up to
+   its .9rem: inside the .8rem footer that would render the fine print LARGER
+   than the prose around it. */
+footer dl { font-size: inherit; margin: 0 0 .5rem; }
 """.strip()
 
 
@@ -2464,6 +2469,22 @@ _HTML_CHROME = {
         "footer": ("Static conformance artifact — reflects this one report run "
                    "against the invoice above. Generated offline by einvoice; "
                    "no network, no tracking."),
+        # THE PROVENANCE FOOTER (T-VHRPTH.2). Labels for the three engine facts
+        # that let a recipient say WHAT checked this invoice six months later:
+        # the engine version, how many business rules that build asserts, and
+        # the full attestation digest they can re-derive. The values are never
+        # authored here — see `_provenance()`.
+        "provenance_engine": "Engine version",
+        "provenance_rules": "Business rules asserted",
+        "provenance_digest": "Attestation SHA-256",
+        # THE HONESTY SENTENCE. Deliberately the SAME claim the site already
+        # publishes under the id `green-not-legal-conformance` (www/index.html,
+        # generated from gen_site.py) — quoted, not re-authored, so the document
+        # a buyer files and the page that sold it to them cannot drift into two
+        # different promises about what "green" means.
+        "provenance_legal_note": ("A green result means “no implemented fatal "
+                                  "rule fired”, not “certified legally "
+                                  "conformant”."),
     },
     "de": {
         "doc_title": "einvoice Konformitätsbericht",
@@ -2503,6 +2524,20 @@ _HTML_CHROME = {
                    "einen Prüflauf gegen die oben genannte Rechnung fest. "
                    "Offline von einvoice erzeugt; kein Netzwerkzugriff, kein "
                    "Tracking."),
+        # "Regelzahl" und "Attestierungs-Hash" sind die Begriffe, die
+        # QUICKSTART.de.md für dieselben zwei Zahlen schon verwendet — eine
+        # zweite deutsche Benennung derselben Sache wäre nur Drift.
+        "provenance_engine": "Engine-Version",
+        "provenance_rules": "Geprüfte Geschäftsregeln (Regelzahl)",
+        "provenance_digest": "Attestierungs-Hash (SHA-256)",
+        # Der amtliche deutsche Wortlaut derselben Aussage, die die Website
+        # unter `green-not-legal-conformance` führt (www/de/index.html, erzeugt
+        # von gen_site.py) — wörtlich übernommen, nicht neu formuliert und
+        # nicht maschinell übersetzt.
+        "provenance_legal_note": ("Ein grünes Ergebnis heißt: keine "
+                                  "implementierte fatale Regel hat ausgelöst. "
+                                  "Es heißt nicht „rechtsverbindlich konforme "
+                                  "XRechnung“."),
     },
 }
 
@@ -2532,6 +2567,68 @@ def _chrome(key, lang="en"):
     if lang == "en":
         return english
     return english + _CHROME_FALLBACK_SUFFIX
+
+
+def _provenance():
+    """The engine facts the HTML footer attributes the report to.
+
+    Returns a dict with any of ``version`` (str), ``rule_count`` (positive int)
+    and ``attestation_sha256`` (non-empty str) that could actually be resolved.
+    A key is ABSENT rather than ``None`` when its source is unavailable, so the
+    caller's "omit the row" branch is a plain membership test.
+
+    ONE SOURCE, NEVER RETYPED. Every value comes out of the same payload
+    ``einvoice info`` prints — :func:`einvoice.cli._info_payload` — so the
+    document a buyer files and the capability probe their CI runs cannot report
+    different numbers, and a release or a re-attestation moves both at once.
+    Nothing here is a literal: there is no second version constant, no second
+    digest, no second rule count to hand-maintain (which is also why no golden
+    may capture this footer verbatim — see test_report_html.py).
+
+    WHY THE IMPORT IS FUNCTION-LOCAL. ``einvoice.cli`` imports THIS module at
+    module scope (``from .report import ...``), so a module-level
+    ``from .cli import _info_payload`` here would close a circular import at
+    package-load time and break every entry point. Importing inside the
+    function is the same pattern ``_info_payload`` itself uses for its coverage
+    and syntax-binding loaders, and it is free in practice: by the time a
+    document is being built the CLI module is already imported, or importable.
+
+    NEVER A LIE, NEVER A TRACEBACK. The in-browser engine bundle ships the
+    modules plus exactly ONE data file (``remediation_catalog.json``), so
+    ``coverage_matrix.json`` and the attestation are genuinely not there and
+    ``rule_count`` / ``attestation_sha256`` legitimately resolve to ``None``.
+    Such a value is dropped — the footer then simply has no such row. A
+    conformance artifact must never print ``None``, ``unknown`` or ``0`` for a
+    fact it does not have, because each of those reads as the fact. Any failure
+    to source the payload at all (missing module, unparsable artifact) degrades
+    to ``{}`` for the same reason: a footer is not worth an exception on a
+    report that otherwise validated fine.
+    """
+    try:
+        from .cli import _info_payload  # local: see docstring (circular import)
+        payload = _info_payload()
+    except Exception:                                    # pragma: no cover
+        return {}
+    if not isinstance(payload, dict):                    # pragma: no cover
+        return {}
+
+    out = {}
+    version = payload.get("version")
+    if isinstance(version, str) and version.strip():
+        out["version"] = version.strip()
+    rule_count = payload.get("rule_count")
+    # A count of 0 is not a fact worth printing — an engine that asserts no
+    # rules has nothing to attest, and "0" in a footer reads as a measurement.
+    if isinstance(rule_count, int) and not isinstance(rule_count, bool) \
+            and rule_count > 0:
+        out["rule_count"] = rule_count
+    digest = payload.get("attestation_sha256")
+    if isinstance(digest, str) and digest.strip():
+        # FULL digest, never truncated: an abbreviated hash is not something the
+        # recipient can re-derive and compare, which is the only reason to print
+        # it at all.
+        out["attestation_sha256"] = digest.strip()
+    return out
 
 
 def _en_attr(doc_lang):
@@ -2631,7 +2728,17 @@ def build_html(report, lang="en"):
         of ``fix_hint`` / BT-BG ``terms`` / ``field`` / ``location``;
       * a not-well-formed input (``report`` has an ``error``) renders a single
         error row with the error code + parser message — mirroring the JSON /
-        JUnit / SARIF not-well-formed contract.
+        JUnit / SARIF not-well-formed contract;
+      * a PROVENANCE FOOTER (T-VHRPTH.2): the engine version, the number of
+        business rules that build asserts and the FULL 64-hex attestation
+        digest, plus the same "green is not legal conformance" sentence the
+        site publishes. Every figure is read from the ``einvoice info`` payload
+        at build time (:func:`_provenance`) — nothing is hard-coded and nothing
+        is a second copy of a constant — and a figure that cannot be sourced
+        (the browser bundle ships no coverage matrix and no attestation) omits
+        its row instead of printing a placeholder. This footer is HTML-ONLY: no
+        machine format carries it, so the digest cannot be mistaken for part of
+        the report schema.
 
     LANGUAGE (T-VHRPTH.4). ``lang`` is KEYWORD-DEFAULTED to ``"en"``, so the
     historical one-argument call — ``build_html(report)``, which is what the
@@ -2933,7 +3040,42 @@ def build_html(report, lang="en"):
                                       _chrome("fallback_note", doc_lang))
                 parts.append('<p class="note">%s</p>' % note)
 
-    parts.append("<footer>%s</footer>" % _h(_chrome("footer", doc_lang)))
+    # THE PROVENANCE FOOTER (T-VHRPTH.2). We sell a CONFORMANCE report, so the
+    # handed-over document has to say WHAT checked the invoice: an evaluator
+    # filing this file, citing it in a ticket or showing it to an auditor next
+    # year needs the engine version, the size of the rule set it asserted and
+    # the full attestation digest that pins the build — otherwise they cannot
+    # even tell whether the report predates a fix. Every value is read from the
+    # `einvoice info` payload (see `_provenance`), and a value that cannot be
+    # sourced OMITS its row rather than printing a placeholder.
+    #
+    # STILL CHROME-INVARIANT (RPT.8): these are facts about the ENGINE, not
+    # about this run — no wall-clock time, no filesystem path, nothing that
+    # differs between two invocations of the same build over the same input.
+    parts.append("<footer>")
+    parts.append("<p>%s</p>" % _h(_chrome("footer", doc_lang)))
+    provenance = _provenance()
+    prov_rows = []
+    if "version" in provenance:
+        prov_rows.append((_chrome("provenance_engine", doc_lang),
+                          "einvoice %s" % provenance["version"]))
+    if "rule_count" in provenance:
+        prov_rows.append((_chrome("provenance_rules", doc_lang),
+                          str(provenance["rule_count"])))
+    if "attestation_sha256" in provenance:
+        prov_rows.append((_chrome("provenance_digest", doc_lang),
+                          provenance["attestation_sha256"]))
+    if prov_rows:
+        parts.append('<dl class="provenance">')
+        for label, value in prov_rows:
+            parts.append("<dt>%s</dt>" % _h(label))
+            parts.append('<dd class="mono">%s</dd>' % _h(value))
+        parts.append("</dl>")
+    # The honesty sentence is unconditional: it is true of a green and a red
+    # result alike, and it is the one claim on the site that a downloaded report
+    # most needs to carry with it.
+    parts.append("<p>%s</p>" % _h(_chrome("provenance_legal_note", doc_lang)))
+    parts.append("</footer>")
     parts.append("</main>")
     parts.append("</body>")
     parts.append("</html>")

@@ -289,25 +289,35 @@ a new fatal appears**, tolerating the pre-existing backlog.
 
 ```sh
 # capture a baseline once (commit the JSON):
-einvoice validate --profile xrechnung --json invoices/x.xml > baseline.json
+python3 -m einvoice.report --profile xrechnung --format json invoices/x.xml > baseline.json
 # then gate every build against it — exit 1 ONLY on a NEW fatal:
 einvoice validate --profile xrechnung --baseline baseline.json invoices/x.xml
 ```
+
+Two entry points, each doing the one thing it is canonically for. The capture
+line is `python3 -m einvoice.report` because that module is the surface that
+emits the versioned conformance document — the one that records, among other
+fields, the `profile` it was captured under. The gate line is the console script
+`einvoice validate`, which is where `--baseline` lives.
 
 **Pass the same `--profile` on both lines.** `xrechnung` is `en16931` *plus* the
 BR-DE-\* layer, so diffing a baseline captured under one profile against a run
 that gates with the other reports every rule that exists in only one of them as
 a change in your invoice — a red build caused by a flag, on bytes that never
-moved. Since 2026-07-29 that is not a silent misgrade: when the baseline
-document records which profile it was captured under and it differs, the gate
-**refuses** with exit `2`, nothing on stdout, and one `error:` line naming both
-profiles. A baseline that records no profile (which is what
-`einvoice validate --json` writes today, and what every baseline captured before
-that change looks like) still diffs exactly as it always did, but prints one
-`note:` line on stderr saying the profile could **not** be checked — so silence
-never means "checked". Capture with
-`python3 -m einvoice.report --profile <p> --format json` instead if you want the
-hard check rather than the note.
+moved. Because the capture above records its profile, that mistake is a hard
+refusal rather than a misgrade: the gate exits `2` with nothing on stdout and one
+`error:` line naming both profiles. Fix the flag, re-run, done.
+
+**If you already hold a legacy baseline, it still works — softly.** A baseline
+captured before 2026-07-29, or captured with the console script's own JSON
+(`einvoice validate --json`), records **no** `profile` field, because that form
+is deliberately frozen on its historical shape (see
+[`../REPORT-FORMATS.md`](../REPORT-FORMATS.md)). Such a baseline diffs exactly as
+it always did and the gate still exits `1` on a new fatal — but it prints one
+`note:` line on stderr each run saying the profile could **not** be checked
+against the profile this run validates with. Expect that line; it is not a
+failure, and it is there so that silence never means "checked". Re-capture with
+the command above whenever you want the flag mismatch caught for you.
 
 `--baseline` re-validates the current invoice (it adds no rule logic), diffs
 the two violation sets, and exits `0` when there are zero **new** fatals,

@@ -38,21 +38,27 @@
 # Adoption on-ramp: to gate only on NEW regressions vs a captured baseline
 # (tolerating a pre-existing backlog) drive `einvoice validate --baseline`
 # per invoice instead of this hard gate — see ci/README.md and T-VH.22:
-#   einvoice validate --profile xrechnung --json invoice.xml > baseline.json
+#   python3 -m einvoice.report --profile xrechnung --format json invoice.xml > baseline.json
 #   einvoice validate --profile xrechnung --baseline baseline.json invoice.xml
 # (--baseline exits 1 only on a new fatal; pre-existing fatals are tolerated.)
+# Two entry points on purpose: einvoice.report emits the versioned conformance
+# document (it records the `profile` it was captured under), and the console
+# script `einvoice validate` is where --baseline lives.
 # Run the FIRST line once and commit baseline.json; only the second belongs in
 # CI. The capture exits 1 when the invoice already has fatals — that is the
 # backlog you are baselining, not an error.
 # Pass the SAME --profile on both lines, and match $PROFILE below (xrechnung by
 # default, EINVOICE_PROFILE to override): xrechnung is en16931 plus the BR-DE-*
-# layer, so a cross-profile diff scores a flag change as a regression. Since
-# 2026-07-29 that is refused outright (exit 2) whenever the baseline records the
-# profile it was captured under. A baseline written by `einvoice validate
-# --json` does NOT record one yet, so the gate instead prints one `note:` line
-# on stderr each run saying the profile could not be checked — expect it; it is
-# not a failure. Capture with `python3 -m einvoice.report --profile xrechnung
-# --format json` for the hard check instead of the note.
+# layer, so a cross-profile diff scores a flag change as a regression. Because
+# the capture above records its profile, that mistake is refused outright (exit
+# 2, nothing on stdout, one `error:` line naming both profiles) instead of
+# misgrading your invoices.
+# LEGACY BASELINES still work, softly: one captured before 2026-07-29, or with
+# the console script's own `einvoice validate --json` (a form frozen on its
+# historical shape), records NO profile field, so the gate instead prints one
+# `note:` line on stderr each run saying the profile could not be checked —
+# expect it; it is not a failure. Re-capture with the line above whenever you
+# want the flag mismatch caught for you.
 
 set -u
 

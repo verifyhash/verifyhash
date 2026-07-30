@@ -24,7 +24,7 @@ Each row runs against a committed known-good fixture
 | Surface | Consumer / CI target | Stability guarantee | Run it |
 | --- | --- | --- | --- |
 | `--format text` | Human at a terminal — a one-line PASS/FAIL verdict plus indented findings. | Human-facing; the wording and layout are **not** a machine contract and may change. Parse `json` instead. | `python3 -m einvoice.report --format text examples/01-missing-fields/fixed.xml` |
-| `--format json` | Machines — the canonical, versioned document every other surface is derived from. | Versioned: `schema` = `einvoice-conformance-report/v1`, integer `report_version`. Field shape is fixed within a version; a breaking change bumps the schema id. See [REPORT-SCHEMA.md](REPORT-SCHEMA.md). | `python3 -m einvoice.report --format json examples/01-missing-fields/fixed.xml` |
+| `--format json` | Machines — the canonical, versioned document every other surface is derived from. Emitted **by `python3 -m einvoice.report`**, the entry point in the last column. | Versioned: `schema` = `einvoice-conformance-report/v1`, integer `report_version`. Field shape is fixed within a version; a breaking change bumps the schema id. See [REPORT-SCHEMA.md](REPORT-SCHEMA.md). The **console script**'s own JSON (`einvoice validate --format json`, alias `einvoice validate --json`) is a *different, narrower* shape — see "Which entry point emits the versioned document" below. | `python3 -m einvoice.report --format json examples/01-missing-fields/fixed.xml` |
 | `--format junit` | CI test panes (Jenkins, GitLab, GitHub Actions test reporters) that ingest JUnit XML. | Shaped to the JUnit `<testsuite>`/`<testcase>` schema those tools read; one `<testcase>` per fired rule, `<failure>` on a FATAL. | `python3 -m einvoice.report --format junit examples/01-missing-fields/fixed.xml` |
 | `--format sarif` | GitHub code-scanning (and any SARIF viewer). | SARIF **2.1.0** (`version` = `2.1.0`, `$schema` set); one `result` per violation. Bound to the external SARIF 2.1.0 spec, not to our own version counter. | `python3 -m einvoice.report --format sarif examples/01-missing-fields/fixed.xml` |
 | `--format gitlab` | GitLab **Code Quality** (Code Climate) merge-request widget. | A JSON array of Code Climate issue objects (`check_name`, `description`, `fingerprint`, `location`, `severity`). A conformant invoice yields an **empty array** `[]` — that is correct, not a failure. | `python3 -m einvoice.report --format gitlab examples/01-missing-fields/fixed.xml` |
@@ -32,6 +32,48 @@ Each row runs against a committed known-good fixture
 | `--format azure` | Azure DevOps **Pipelines** inline issues — the MS/SAP-stack ERP buyer whose CI runs on Azure DevOps, not GitHub Actions. Any script step that prints these lines gets file-anchored build/PR issues with zero extension install. | Azure DevOps [logging-command](https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands) `##vso[task.logissue ...]` lines: one per finding (`fatal`->`type=error`, `warning`/`information`->`type=warning`), `sourcepath=`/`code=` (rule id) properties, optional `linenumber=` when a source position is known. Bound to Azure's logging-command protocol, not to our own version counter. Advisory `information` findings surface as `type=warning` (exit stays 0); a fully conformant invoice emits a single `#` log-comment no-op line. | `python3 -m einvoice.report --format azure examples/01-missing-fields/fixed.xml` |
 | `--format html` | A human report artifact you can archive or attach to a build. | Human-facing; the HTML structure is a presentation surface and may change. Not a machine contract — parse `json` for automation. | `python3 -m einvoice.report --format html examples/01-missing-fields/fixed.xml` |
 | `--format badge` | A [shields.io endpoint badge](https://shields.io/badges/endpoint-badge) you commit next to a report so a README badge can render the last verdict. | shields.io endpoint schema: `schemaVersion` = `1`, plus `label`/`message`/`color`. Reflects **this committed run**, not a live hosted service. | `python3 -m einvoice.report --format badge examples/01-missing-fields/fixed.xml` |
+
+## Which entry point emits the versioned document
+
+The table above documents `python3 -m einvoice.report`. This project also ships a
+**console script**, `einvoice validate`, which accepts `--format text|json` (and
+`--json` as a spelling of `--format json`). Seven of the nine bodies above —
+`junit`, `sarif`, `gitlab`, `github`, `azure`, `html`, `badge` — are rendered by
+`einvoice.report`'s emitters on **both** entry points and are byte-identical.
+Two are written by the console script itself, and only one of those matters to a
+machine:
+
+- **`text`** differs in wording (two hand-written human summaries). Neither is a
+  machine contract, so this is a non-issue.
+- **`json`** is a materially different document.
+  `python3 -m einvoice.report --format json` emits the versioned report:
+  `schema`, `report_version`,
+  `profile`, `fatal_count`, `warning_count`, plus `source`, `valid`,
+  `violation_count`, `violations` and the `syntax_bindings` block. The **console
+  script** form `einvoice validate --format json` / `einvoice validate --json`
+  emits `source`, `valid`, `violation_count`, `violations`, `syntax_bindings`,
+  `syntax_binding_fatal_count`, `syntax_binding_warning_count` — the same
+  findings, but **not** the five versioning/aggregate fields (`schema`,
+  `report_version`, `profile`, `fatal_count`, `warning_count`).
+
+That is a decision, not a gap. `einvoice validate --json` predates the versioned
+report and is consumed by shipped pipelines; `cli.py` therefore freezes it as its
+own historical shape (`OUTPUT_FORMATS = ("text", "json")`) so that not one
+historical byte moves under existing consumers. `test_golden_snapshot.py` and
+`test_cli.py` hold that line.
+
+**Practical consequence.** Because `profile` is one of the five missing fields, a
+baseline captured with `einvoice validate --json` cannot be profile-checked: the
+gate `einvoice validate --profile <p> --baseline <it>` still diffs correctly and
+still exits `1` on a new fatal, but it prints one `note:` line on stderr saying
+the profile could not be checked against the profile this run validates with. A
+baseline captured with `python3 -m einvoice.report --profile <p> --format json`
+carries `profile`, so a cross-profile gate is refused outright (exit `2`, one
+`error:` line naming both profiles) instead of quietly misgrading. That is why
+[`ci/README.md`](ci/README.md) teaches the capture with `einvoice.report` and the
+gate with `einvoice validate`. If you need the versioned envelope, call
+`python3 -m einvoice.report --format json`; if you have a consumer already
+parsing `einvoice validate --json`, nothing you rely on has changed.
 
 ## The two standalone modes
 

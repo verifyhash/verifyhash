@@ -445,9 +445,27 @@ ENTRY_POINT_CAPABILITIES = {
     },
     "format": {
         "accepted_by": ("einvoice", "einvoice.report"),
-        "why": ("Both, over the same REPORT_FORMATS registry. The seven "
-                "delegated bodies are rendered by einvoice.report's emitters "
-                "on both surfaces, so they are byte-identical."),
+        "why": ("Both, over the same REPORT_FORMATS registry, but with ONE "
+                "documented asymmetry. The DELEGATED_FORMATS bodies are "
+                "rendered by einvoice.report's emitters on both surfaces, so "
+                "they are byte-identical. The two OUTPUT_FORMATS values -- "
+                "text and json -- are written by this console script itself "
+                "and differ: text differs only in human wording (no machine "
+                "contract), while json is a materially different MACHINE "
+                "document. The console script's json carries source, valid, "
+                "violation_count, violations and the syntax_bindings block "
+                "with its two counts, but NOT the five versioning/aggregate "
+                "fields einvoice.report --format json adds (schema, "
+                "report_version, profile, fatal_count, warning_count), so it "
+                "is not the versioned einvoice-conformance-report/v1 "
+                "envelope. Deliberate: OUTPUT_FORMATS is frozen on the shape "
+                "shipped before that envelope existed so no historical byte "
+                "moves under pipelines already parsing it. Practical "
+                "consequence: because profile is one of the five, a baseline "
+                "captured with `einvoice validate --json` cannot be "
+                "profile-checked and the gate can only note that, not refuse "
+                "-- capture with einvoice.report for the hard check. Both "
+                "shapes are documented at https://verifyhash.com/einvoice/"),
     },
     "profile": {
         "accepted_by": ("einvoice", "einvoice.report"),

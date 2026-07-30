@@ -36,18 +36,23 @@ invoice-conformance:
 # Adoption on-ramp (T-VH.22): to gate only on NEW regressions vs a captured
 # baseline (tolerating a pre-existing backlog), drive
 # `einvoice validate --baseline` per invoice instead of this hard gate:
-#   einvoice validate --profile xrechnung --json invoices/x.xml > baseline.json
+#   python3 -m einvoice.report --profile xrechnung --format json invoices/x.xml > baseline.json
 #   einvoice validate --profile xrechnung --baseline baseline.json invoices/x.xml
 # (--baseline exits 1 only on a new fatal; pre-existing fatals are tolerated.)
+# Two entry points on purpose: einvoice.report emits the versioned conformance
+# document (it records the `profile` it was captured under), and the console
+# script `einvoice validate` is where --baseline lives.
 # Run the FIRST line once locally and commit baseline.json; only the second line
 # belongs in the pipeline. The capture exits 1 when the corpus already has
 # fatals — that is the backlog you are baselining, not an error.
 # Pass the SAME --profile on both lines, matching EINVOICE_PROFILE above:
 # xrechnung is en16931 plus the BR-DE-* layer, so a cross-profile diff scores a
-# flag change as a regression. Since 2026-07-29 that is refused outright (exit 2,
-# nothing on stdout) whenever the baseline records the profile it was captured
-# under. A baseline written by `einvoice validate --json` does NOT record one
-# yet, so the gate instead prints one `note:` line on stderr each run saying the
-# profile could not be checked — expect it; it is not a failure. Capture with
-# `python3 -m einvoice.report --profile xrechnung --format json` for the hard
-# check instead of the note.
+# flag change as a regression. Because the capture above records its profile,
+# that mistake is refused outright (exit 2, nothing on stdout, one `error:` line
+# naming both profiles) instead of misgrading your invoices.
+# LEGACY BASELINES still work, softly: one captured before 2026-07-29, or with
+# the console script's own `einvoice validate --json` (a form frozen on its
+# historical shape), records NO profile field, so the gate instead prints one
+# `note:` line on stderr each run saying the profile could not be checked —
+# expect it; it is not a failure. Re-capture with the line above whenever you
+# want the flag mismatch caught for you.

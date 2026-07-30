@@ -26,6 +26,33 @@ without changing them. Any BREAKING change to the report shape bumps the id
 (and the const) to `.../v2` — consumers should match on the `schema` string,
 not on `report_version` alone.
 
+**Which entry point emits this document.** This contract describes
+`python3 -m einvoice.report --format json` (equivalently, `build_report` output).
+The **console script** form — `einvoice validate --format json`, and its alias
+`einvoice validate --json` — emits that surface's OWN historical JSON shape, and
+it does **not** carry the five versioning/aggregate fields: no `schema`, no
+`report_version`, no `profile`, no `fatal_count`, no `warning_count`. It does
+carry the findings themselves (`source`, `valid`, `violation_count`,
+`violations`, `syntax_bindings`, `syntax_binding_fatal_count`,
+`syntax_binding_warning_count`). That is deliberate, not a gap: `cli.py` freezes
+`OUTPUT_FORMATS = ("text", "json")` on the shape shipped before the versioned
+report existed, so that no historical byte moves under pipelines already parsing
+it (`test_golden_snapshot.py` and `test_cli.py` hold that line). So the
+"match on the `schema` string" rule above applies to `einvoice.report` output;
+a consumer handed console-script JSON will find no `schema` key to match on, and
+should either treat its absence as "console-script shape" or re-run the capture
+through `python3 -m einvoice.report --format json`.
+
+A concrete consequence, since `profile` is one of the five missing fields: a
+baseline captured with `einvoice validate --json` **cannot be profile-checked**.
+`einvoice validate --profile <p> --baseline <that file>` still diffs correctly
+and still exits `1` on a new fatal, but it prints one `note:` line on stderr
+saying the profile could not be checked against the profile this run validates
+with. Capture with `python3 -m einvoice.report --profile <p> --format json` and
+the `profile` field is present, so a cross-profile gate is refused outright
+(exit `2`) rather than quietly misgraded — see **Baseline diff mode** below and
+[`REPORT-FORMATS.md`](REPORT-FORMATS.md).
+
 ## Invocation
 
 ```

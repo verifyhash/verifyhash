@@ -23,7 +23,7 @@
   "sha256": {
     "__init__.py": "6920ab7944f40ae07c12fa6017bab107d4b7d583fa8a91a1763531fec54186f8",
     "_xmlsec.py": "35afa2a1c5e26cb228ab5c6061216e2d05e99da943a028dc997dcd67c882ff6a",
-    "cli.py": "bdc508cdf10452977cf8d6f08d46684070c5fb7c92bdb8c9f44eb7719b57ce34",
+    "cli.py": "14b4158a581cfa5f04f49b6f8d65238b0be47075b29e84d8823ced9b6d5a0e5e",
     "codelists.py": "5ff19ec7a24be7c65734d7312a9f7e1b4739ce4645fb71a2dae027e03d8a6ad7",
     "config.py": "28e4c3d929041a0b47193980f094970d5693c6142f7166a7c1fb433d2565cd3a",
     "coverage.py": "e9cbe5d227ba9d6c8aa4f47101ba28000d958fb82af8b38eaf9e2690d8deec2a",

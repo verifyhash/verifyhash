@@ -1542,8 +1542,8 @@ SARIF_SCHEMA_URI = (
     "Schemata/sarif-schema-2.1.0.json"
 )
 
-#: Canonical base URL for a per-rule reference page, e.g.
-#: ``https://verifyhash.com/einvoice/rules/BR-01/``. This is the EXACT form
+#: Canonical base URL for a per-rule reference page: this constant + ``BR-01/``
+#: is the page URL for rule ``BR-01``. That is the EXACT form
 #: ``gen_site.py`` emits via its ``_url_rule`` helper (BASE_URL
 #: ``https://verifyhash.com/einvoice`` + ``/rules/<id>/``, trailing slash). It
 #: is duplicated here as a plain string constant rather than imported because
@@ -1562,10 +1562,12 @@ def rule_page_url(rule_id):
 
     THE single URL-building code path for the whole package: base constant +
     id + trailing slash, exactly the shape ``gen_site.py``'s ``_url_rule``
-    generates on disk (``https://verifyhash.com/einvoice/rules/BR-DE-2/``).
+    generates on disk (``<base>/rules/BR-DE-2/``, trailing slash included).
     Every emitter that deep-links a rule calls this, so the CLI text report,
-    the SARIF ``helpUri``, the HTML anchor and the published site are
-    structurally incapable of disagreeing.
+    the ``--explain`` block's ``rule page`` line, the SARIF ``helpUri``, the
+    HTML anchor and the published site are structurally incapable of
+    disagreeing. The origin appears ONCE in this module, in the constant above
+    — a second spelling of it anywhere here is a bug (a static gate counts).
 
     The URL is ABSOLUTE on purpose: the HTML artifact is read from a local
     file (a CI download, an email attachment), where a relative link dangles.
@@ -3228,6 +3230,19 @@ def format_explain(rule_id, catalog=None, lang="en"):
         with a German tax authority, and the block would otherwise present them
         identically.
 
+    Two ONWARD-ROUTE lines close the block in both languages (T-VHUX2.5), so
+    the landing page of every failure report is not itself a dead end:
+
+      * ``rule page`` — the rule's canonical reference page, built by
+        :func:`rule_page_url` from the CANONICAL id (so a lowercase
+        ``--explain br-de-15`` still links correctly). That page carries more
+        than this block does — the English AND German wording side by side,
+        plus the provenance in full — so it is emitted in both languages.
+      * ``in German`` — the exact ``--lang=de`` invocation, shown ONLY when the
+        reader is not already in German AND the catalog really ships German for
+        this rule. It is not labelled ``german``: that label already means
+        PROVENANCE in the German block.
+
     Nothing is translated at runtime and no German is generated here: every
     German byte is a lookup of a string ``gen_remediation.py`` already committed.
     An unrecognised ``lang`` renders as English (callers reject unknown values
@@ -3284,6 +3299,41 @@ def format_explain(rule_id, catalog=None, lang="en"):
         lines.append("  german   : %s" % german_line)
     if prov_assert:
         lines.append("  assert   : %s" % prov_assert)
+
+    # MEASURED defect this fixes (T-VHUX2.5, 2026-07-30): T-VHUX2 made every
+    # failure report route the reader here, and here the trail ENDED. The block
+    # named neither the rule's own reference page (which carries strictly more:
+    # provenance plus the full remediation prose) nor the fact that German is
+    # one flag away — on a product whose buyers exist because of a GERMAN
+    # mandate. Both hops are appended below, as ordinary aligned fields.
+    if entry:
+        # Catalogued by construction (the `entry is None` return above already
+        # fired for a miss), but the guard is EXPLICIT because a link that
+        # 404s is worse than no link: the page surface is generated from this
+        # same catalog, so "entry exists" is exactly "page exists"
+        # (test_report_explain.py pins that set equality in both directions).
+        # ONE origin: rule_page_url(), the same builder the SARIF helpUri, the
+        # text report's `rule page:` line and gen_site._url_rule() use — and it
+        # is fed the CANONICAL id, not the id the user typed, so
+        # `--explain br-de-15` still links to the real .../BR-DE-15/ page.
+        # gen_site is deliberately NOT imported: it is a build script, absent
+        # from the wheel. Emitted in BOTH languages: the page is framed in
+        # English but carries the German title and fix beside the English ones,
+        # so it is worth following from either block. The label stays English
+        # like every other label here (the German block's labels already are).
+        lines.append("  rule page: %s" % rule_page_url(canonical))
+    # The German pointer is for readers who are NOT already in German, and only
+    # where German is actually SHIPPED for this rule. `de_source` None is the
+    # catalog's own "no German here" case (see GERMAN_PROVENANCE), so we never
+    # promise a translation the catalog cannot deliver. The label is
+    # deliberately NOT `german`: in the --lang de block that label means
+    # PROVENANCE, and one label with two meanings would be a real confusion.
+    # The line claims only what `--lang de` does — it hands over the exact
+    # invocation and leaves the "whose German is this?" answer to the `german`
+    # provenance line that block prints for itself.
+    if (lang != "de" and entry.get("de_source") is not None
+            and (entry.get("title_de") or entry.get("fix_de"))):
+        lines.append("  in German: einvoice --explain %s --lang=de" % canonical)
     return "\n".join(lines) + "\n"
 
 

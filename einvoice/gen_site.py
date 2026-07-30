@@ -427,6 +427,16 @@ LANDING_CLAIMS = {
     "invoice-never-uploaded":
         "the in-browser validator never uploads the invoice; only the "
         "WebAssembly runtime is fetched, after an explicit click",
+    "batch-and-fail-on":
+        "CI-policy ergonomics, one slug for the pair: `validate-batch "
+        "<dir|glob>` grades a whole directory tree (or glob) into ONE "
+        "aggregate verdict — an aggregate shape that exists for json, junit "
+        "and text only — and `--fail-on=fatal|warning|information` moves the "
+        "severity at which the exit code turns non-zero, so a team adopting "
+        "the checker over an existing archive picks its own gate height "
+        "instead of inheriting ours. Stated with its load-bearing limit: a "
+        "corpus is gated FILE-BY-FILE, because `--baseline` is refused on "
+        "`validate-batch` (exit 2) — see cli.py's baseline dispatch guard",
     # --- deliberately single-locale (declared in the parity allowlist) -----
     "no-german-rule-pages":
         "DE only: there are deliberately no per-rule German pages; the "
@@ -1618,6 +1628,59 @@ def render_landing():
       "rules alone. Add <code>--format json</code> for the full finding list, "
       "and <code>einvoice --explain BR-DE-15</code> prints the remediation "
       "entry for any rule id you get back.</p>")
+    # CI-POLICY CAPABILITY (T-VHSELL.1): the argument that beats a free
+    # official validator on ergonomics — gate a legacy corpus without a
+    # day-one red build — was unstated on every page. ONE claim covers the
+    # pair (validate-batch + --fail-on); its limits are load-bearing, not a
+    # footnote: --baseline is REFUSED on validate-batch (exit 2, measured), so
+    # a corpus is gated FILE-BY-FILE and nothing here may imply otherwise.
+    # Every `einvoice validate-batch` spelling on the page carries
+    # --profile xrechnung, because batch obeys the default profile (en16931)
+    # exactly like `validate` does.
+    w("<p>Turning the checker on over invoices you <em>already</em> have is a "
+      "different job from validating one new file, and two mechanisms exist "
+      "for it. "
+      + _claim("batch-and-fail-on",
+               "The <code>validate-batch</code> subcommand takes a directory "
+               "or a glob, walks it recursively, validates every "
+               "<code>.xml</code> and <code>.pdf</code> invoice it finds "
+               "(dotfiles and dot-directories skipped) and prints <strong>one "
+               "aggregate verdict</strong> &mdash; a "
+               "<code>PASS</code>/<code>FAIL</code>/<code>ERROR</code> line "
+               "per file, the totals, and a &ldquo;most violated "
+               "rules&rdquo; ranking &mdash; while "
+               "<code>--fail-on=fatal|warning|information</code> sets the "
+               "severity at which the exit code turns non-zero, so your team "
+               "picks its own gate height instead of inheriting ours")
+      + " (<code>fatal</code> is the default: warnings and information "
+      "findings are reported but do not fail the build; the other two values "
+      "make them fail it):</p>")
+    w("<pre><code>einvoice validate-batch --profile xrechnung "
+      "--fail-on=fatal invoices/</code></pre>")
+    w("<p>Three things to know before you write that job. "
+      "<code>--profile xrechnung</code> is not decoration &mdash; batch obeys "
+      "the same default profile as every other subcommand "
+      "(<code>en16931</code>), so omitting it grades the European core rules "
+      "without the German KoSIT layer. The aggregate shape exists for "
+      "<code>json</code>, <code>junit</code> and <code>text</code> "
+      "<em>only</em>; the other six formats describe a single invoice, and "
+      "asking for one over a directory is refused with exit&nbsp;2 and a "
+      "message naming the three &mdash; exactly the split "
+      "<code>einvoice --help</code> prints. And a legacy corpus is gated "
+      "<strong>file-by-file</strong> in a CI loop: <code>--baseline</code>, "
+      "the regression diff that fails a run only on findings that are "
+      "<em>new</em> since a stored report, is deliberately refused on the "
+      "batch subcommand (exit&nbsp;2 &mdash; one stored single-invoice report "
+      "has nothing to diff against an aggregate), so there is no single call "
+      "that freezes a whole archive. Loop "
+      "<code>einvoice validate --baseline prev.json invoice.xml</code> per "
+      "file if you want that, or hold the batch gate at "
+      "<code>--fail-on=fatal</code> and raise it once the backlog is clean. "
+      + _claim("green-not-legal-conformance",
+               "Either way, a green aggregate means &ldquo;no implemented "
+               "fatal rule fired&rdquo;, not &ldquo;certified legally "
+               "conformant&rdquo;")
+      + ".</p>")
     w("<p>Everything is free and open source (Apache-2.0). Start here:</p>")
     w('<ul class="rules">')
     w('<li><a href="%s">Repository README</a> — install '
@@ -2520,6 +2583,57 @@ def render_de():
       "Kommandos die Testsuite gegen die echte Engine ausf&uuml;hrt &mdash; "
       "die Doku kann nicht von dem abdriften, was das Werkzeug wirklich "
       "tut.</p>" % (_h(_REPO_CI), _h(_REPO_ACTION)))
+
+    # CI-POLICY CAPABILITY (T-VHSELL.1) — deutsche Fassung des englischen
+    # Absatzes: EIN Claim fuer das Paar (validate-batch + --fail-on), mit
+    # derselben tragenden Grenze (Datei fuer Datei, weil --baseline auf
+    # validate-batch abgelehnt wird). Uebersetzte PROSA, kein KoSIT-Regeltext;
+    # jede gezeigte validate-batch-Schreibweise fuehrt --profile xrechnung.
+    w("<p><strong>Bestand statt gr&uuml;ner Wiese:</strong> Wer den "
+      "Pr&uuml;fer &uuml;ber ein bestehendes Rechnungsarchiv einf&uuml;hrt, "
+      "das heute schon durchfallen w&uuml;rde, braucht kein rotes Build am "
+      "ersten Tag &mdash; und genau daf&uuml;r gibt es zwei Mechanismen. "
+      + _claim("batch-and-fail-on",
+               "Das Unterkommando <code>validate-batch</code> nimmt ein "
+               "Verzeichnis oder ein Glob-Muster, l&auml;uft rekursiv "
+               "hindurch, pr&uuml;ft jede gefundene <code>.xml</code>- und "
+               "<code>.pdf</code>-Rechnung und gibt <strong>ein einziges "
+               "aggregiertes Ergebnis</strong> aus &mdash; eine Zeile pro "
+               "Datei, die Gesamtz&auml;hlung und eine Rangliste der "
+               "h&auml;ufigsten Regelverst&ouml;&szlig;e &mdash;, und "
+               "<code>--fail-on=fatal|warning|information</code> legt fest, "
+               "ab welcher Schwere der Exit-Code von 0 abweicht: Ihr Team "
+               "w&auml;hlt die H&ouml;he seiner eigenen Schwelle, statt "
+               "unsere zu erben")
+      + " (<code>fatal</code> ist die Voreinstellung &mdash; Warnungen und "
+      "Hinweise werden gemeldet, lassen den Build aber nicht scheitern). "
+      "Die Aufrufform lautet <code>einvoice validate-batch --profile xrechnung "
+      "&lt;Verzeichnis&gt;</code>: Auch der Stapellauf folgt dem "
+      "Standardprofil, ohne <code>--profile xrechnung</code> pr&uuml;ft er "
+      "nur die europ&auml;ischen Kernregeln ohne die deutsche "
+      "KoSIT-Schicht.</p>")
+    w("<p>Drei Grenzen, bevor Sie den CI-Job schreiben. Die aggregierte Form "
+      "gibt es nur f&uuml;r <code>json</code>, <code>junit</code> und "
+      "<code>text</code>; die anderen sechs Ausgabeformate beschreiben genau "
+      "<em>eine</em> Rechnung, und ein solches Format &uuml;ber ein "
+      "Verzeichnis wird mit Exit-Code&nbsp;2 abgelehnt, statt still etwas "
+      "anderes zu bedeuten. Ein Altbestand wird <strong>Datei f&uuml;r "
+      "Datei</strong> in einer CI-Schleife abgesichert: "
+      "<code>--baseline</code> &mdash; der Regressionsvergleich, der nur bei "
+      "Befunden fehlschl&auml;gt, die gegen&uuml;ber einem gespeicherten "
+      "Bericht <em>neu</em> sind &mdash; wird auf dem Stapelkommando bewusst "
+      "abgelehnt (Exit-Code&nbsp;2: ein gespeicherter Einzelbericht "
+      "l&auml;sst sich nicht gegen ein Aggregat vergleichen). Es gibt also "
+      "keinen einzelnen Aufruf, der ein ganzes Archiv einfriert; daf&uuml;r "
+      "rufen Sie <code>einvoice validate --baseline prev.json invoice.xml</code> "
+      "pro Datei auf, oder Sie halten das Stapel-Gate bei "
+      "<code>--fail-on=fatal</code> und ziehen die Schwelle an, sobald der "
+      "R&uuml;ckstand abgearbeitet ist. Und drittens: "
+      + _claim("green-not-legal-conformance",
+               "Auch ein gr&uuml;nes Aggregat hei&szlig;t nur <em>keine "
+               "implementierte fatale Regel hat ausgel&ouml;st</em> &mdash; "
+               "nicht &bdquo;rechtsverbindlich konforme XRechnung&ldquo;")
+      + ".</p>")
 
     # ---- Weiterfuehrend ----------------------------------------------------
     w("<h2>Weiterf&uuml;hrend</h2>")

@@ -321,13 +321,17 @@ def render_markdown(matrix, cii_parity=None):
     gmc = matrix.get("german_message_coverage")
     if gmc:
         w("- **Official German messages: %d rules** carry an official German"
-          " assert message, surfaced by the CLI `--lang de` flag (report"
-          " human-message only; `--json` and exit codes are unchanged). That"
-          " text is lifted VERBATIM from the vendored KoSIT XRechnung"
-          " Schematron (`de_source == \"kosit\"`), never machine-translated;"
-          " every other rule is English-only by design (no official German"
-          " assert text exists to quote). See the README `--lang de` section."
-          % gmc["official_message_de_count"])
+          " assert message, surfaced by the CLI `--lang de` flag (`--json` and"
+          " exit codes are unchanged). That text is lifted VERBATIM from the"
+          " vendored KoSIT XRechnung Schematron (`de_source == \"kosit\"`),"
+          " never machine-translated; where no official German assert text"
+          " exists to quote, the assert message — and only the message — falls"
+          " back to English. Rule titles and fix hints are German on all %d"
+          " catalogued rules, so `--lang de` renders the German headline and"
+          " the `Behebung` hint (and `--explain` the same two fields) even on a"
+          " finding whose message fell back. See the README `--lang de`"
+          " section."
+          % (gmc["official_message_de_count"], gmc["total_rules"]))
     gap_head = matrix.get("gap")
     taut_head = (matrix.get("exclusions") or {}).get("official_tautology")
     if gap_head and taut_head is not None:

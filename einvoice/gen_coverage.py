@@ -781,13 +781,19 @@ def build_german_message_coverage():
     return {
         "official_message_de_count": len(de_ids),
         "total_rules": len(catalog),
-        "surface": "--lang de (CLI / report human message only; not in --json)",
+        "surface": ("--lang de (CLI text report, --format html and --explain: "
+                    "German rule title and fix hint on every catalogued rule, "
+                    "plus the official German assert message on the rules that "
+                    "have one); not in --json"),
         "source": ("verbatim from the vendored KoSIT XRechnung Schematron "
                    "<sch:assert> text (de_source == \"kosit\"); never machine- "
                    "or hand-translated"),
-        "other_rules_policy": ("all other rules are English-only by design — no "
-                               "official German assert text exists for them, so "
-                               "--lang de falls back to the English message"),
+        "other_rules_policy": ("the assert MESSAGE is the only field that falls "
+                               "back: rules without official KoSIT German have "
+                               "no German assert text to quote, so --lang de "
+                               "shows their English message, while title_de and "
+                               "fix_de are populated on every catalog entry and "
+                               "render in German for all of them"),
     }
 
 

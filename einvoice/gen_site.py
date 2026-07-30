@@ -437,6 +437,22 @@ LANDING_CLAIMS = {
         "instead of inheriting ours. Stated with its load-bearing limit: a "
         "corpus is gated FILE-BY-FILE, because `--baseline` is refused on "
         "`validate-batch` (exit 2) — see cli.py's baseline dispatch guard",
+    "conformance-receipt":
+        "the conformance receipt, one slug for the pair: `einvoice receipt "
+        "<invoice.xml>` emits a compact deterministic JSON document pinning "
+        "WHICH invoice bytes were graded (`input_sha256`), under which "
+        "profile and which engine version, to what verdict and with which "
+        "fatal rule ids fired, wrapped with a `content_sha256` taken over "
+        "its own canonical body — and `einvoice receipt --verify "
+        "<receipt.json>` recomputes and compares that digest in ONE offline "
+        "command, no server, nothing uploaded. Stated with the limits that "
+        "make it honest: it is tamper-EVIDENT only, because `content_sha256` "
+        "covers the BODY and is not part of its own pre-image, so a "
+        "coordinated body-and-hash rewrite verifies clean (remedy: an "
+        "external anchor, or re-running validation on the original bytes — "
+        "RECEIPT-VERIFICATION.md, checkout-only, never linked); it is a "
+        "record and not a certificate of any kind; and it carries no "
+        "wall-clock time by default, which is what makes it byte-reproducible",
     # --- deliberately single-locale (declared in the parity allowlist) -----
     "no-german-rule-pages":
         "DE only: there are deliberately no per-rule German pages; the "
@@ -1681,6 +1697,54 @@ def render_landing():
                "fatal rule fired&rdquo;, not &ldquo;certified legally "
                "conformant&rdquo;")
       + ".</p>")
+    # CONFORMANCE RECEIPT (T-VHRCPT.1): the one capability here that is not a
+    # faster copy of a free official validator — a compact, recomputable
+    # document that pins WHICH bytes were graded to WHAT verdict — was
+    # unstated on every page we own. ONE claim slug covers the pair (emit +
+    # --verify). Both limits below are load-bearing, not decoration: the
+    # digest covers the BODY and is not self-covering
+    # (RECEIPT-VERIFICATION.md), and the receipt records no time by default
+    # (receipt.py: determinism is the product). Nothing here may read as a
+    # legal or archiving certificate — the green-verdict meaning is the
+    # EXISTING green-not-legal-conformance wording, reused, not a second one.
+    w("<p><strong>A receipt for the verdict.</strong> A validation run is "
+      "ephemeral: the exit code scrolls past, and nothing is left beside the "
+      "archived invoice recording what was actually checked. "
+      + _claim("conformance-receipt",
+               "<code>einvoice receipt &lt;invoice.xml&gt;</code> emits a "
+               "small deterministic JSON document that pins <em>which "
+               "bytes</em> were graded &mdash; <code>input_sha256</code>, the "
+               "SHA-256 of the input document's raw bytes &mdash; under which "
+               "profile and which engine version, to what verdict, with the "
+               "id and message of every fatal rule that fired, all wrapped "
+               "with a <code>content_sha256</code> taken over the "
+               "canonicalised body; and <code>einvoice receipt --verify "
+               "&lt;receipt.json&gt;</code> recomputes that digest and "
+               "compares it in one command, offline, with no server and "
+               "nothing uploaded")
+      + ":</p>")
+    w("<pre><code>einvoice receipt invoice.xml &gt; receipt.json\n"
+      "einvoice receipt --verify receipt.json</code></pre>")
+    w("<p>Read that as <strong>tamper-evident</strong>, and no stronger. "
+      "<code>content_sha256</code> is a digest of the body <em>only</em> and "
+      "is not part of its own pre-image, so editing any body field &mdash; or "
+      "corrupting the stored hash itself &mdash; is caught, while a "
+      "coordinated rewrite that edits the body <em>and</em> recomputes the "
+      "hash over the forgery is internally consistent and verifies clean. "
+      "Closing that gap needs an anchor outside the document: compare "
+      "<code>content_sha256</code> against an independently held copy of it, "
+      "or re-run validation on the original bytes the receipt identifies via "
+      "<code>input_sha256</code> and check the body matches. The exact "
+      "recompute recipe, in any language, is written out in "
+      "<code>RECEIPT-VERIFICATION.md</code> in a source checkout. The "
+      "document deliberately carries no wall-clock time by default: identical "
+      "input bytes and profile produce a byte-identical receipt on every run, "
+      "so it records <em>what</em> was graded, not when. "
+      + _claim("green-not-legal-conformance",
+               "And it is a record, not a certificate &mdash; a green verdict "
+               "inside it means &ldquo;no implemented fatal rule fired&rdquo;, "
+               "not &ldquo;certified legally conformant&rdquo;")
+      + ".</p>")
     w("<p>Everything is free and open source (Apache-2.0). Start here:</p>")
     w('<ul class="rules">')
     w('<li><a href="%s">Repository README</a> — install '
@@ -2631,6 +2695,56 @@ def render_de():
       "R&uuml;ckstand abgearbeitet ist. Und drittens: "
       + _claim("green-not-legal-conformance",
                "Auch ein gr&uuml;nes Aggregat hei&szlig;t nur <em>keine "
+               "implementierte fatale Regel hat ausgel&ouml;st</em> &mdash; "
+               "nicht &bdquo;rechtsverbindlich konforme XRechnung&ldquo;")
+      + ".</p>")
+
+    # KONFORMITAETSBELEG (T-VHRCPT.1) — deutsche Fassung des englischen
+    # Absatzes: EIN Claim fuer das Paar (receipt + --verify), mit denselben
+    # tragenden Grenzen (nur manipulations-ERKENNEND, weil content_sha256 den
+    # Rumpf abdeckt und sich nicht selbst deckt; keine Uhrzeit; kein
+    # Zertifikat). Uebersetzte PROSA, kein KoSIT-Regeltext; die gezeigten
+    # Befehlsschreibweisen sind byte-identisch mit README.md. Die Datei
+    # RECEIPT-VERIFICATION.md wird benannt, nie verlinkt.
+    w("<p><strong>Ein Beleg zum Pr&uuml;fergebnis.</strong> Ein "
+      "Validierungslauf ist fl&uuml;chtig: Der Exit-Code scrollt vorbei, und "
+      "neben der archivierten Rechnung bleibt nichts liegen, was festh&auml;lt, "
+      "was &uuml;berhaupt gepr&uuml;ft wurde. "
+      + _claim("conformance-receipt",
+               "<code>einvoice receipt invoice.xml</code> schreibt ein "
+               "kleines, deterministisches JSON-Dokument, das festh&auml;lt, "
+               "<em>welche Bytes</em> gepr&uuml;ft wurden &mdash; "
+               "<code>input_sha256</code>, der SHA-256-Wert der rohen "
+               "Eingabedatei &mdash;, unter welchem Profil und mit welcher "
+               "Programmversion, mit welchem Ergebnis und welche fatalen "
+               "Regel-IDs ausgel&ouml;st haben, umschlossen von einem "
+               "<code>content_sha256</code> &uuml;ber den kanonisierten Rumpf "
+               "des Dokuments selbst; <code>einvoice receipt --verify "
+               "receipt.json</code> rechnet genau diesen Wert mit einem "
+               "einzigen Befehl nach, offline, ohne Server und ohne dass "
+               "irgendetwas hochgeladen wird")
+      + ".</p>")
+    w("<p>Das hei&szlig;t: Manipulationen werden <strong>erkennbar</strong>, "
+      "nicht verhindert. <code>content_sha256</code> deckt <em>nur</em> den "
+      "Rumpf ab und ist nicht Teil seines eigenen Hash-Eingangs. Jede "
+      "&Auml;nderung an einem Rumpffeld &mdash; und ebenso ein "
+      "verf&auml;lschter <code>content_sha256</code> selbst &mdash; wird "
+      "erkannt; wer dagegen Rumpf <em>und</em> Hash gemeinsam neu schreibt, "
+      "erh&auml;lt einen in sich stimmigen, aber gef&auml;lschten Beleg, der "
+      "sauber durch die Pr&uuml;fung geht. Dagegen hilft nur ein Anker "
+      "au&szlig;erhalb des Dokuments: den <code>content_sha256</code> mit "
+      "einem unabh&auml;ngig aufbewahrten Wert vergleichen, oder die "
+      "Validierung auf den Originalbytes wiederholen, die der Beleg &uuml;ber "
+      "<code>input_sha256</code> benennt, und den Rumpf vergleichen. Das "
+      "Nachrechen-Rezept f&uuml;r beliebige Sprachen steht in "
+      "<code>RECEIPT-VERIFICATION.md</code> im Quell-Checkout. Eine Uhrzeit "
+      "tr&auml;gt der Beleg standardm&auml;&szlig;ig bewusst nicht: Gleiche "
+      "Eingabebytes und gleiches Profil ergeben bei jedem Lauf ein "
+      "byte-identisches Dokument, der Beleg h&auml;lt also fest, <em>was</em> "
+      "gepr&uuml;ft wurde, nicht wann. "
+      + _claim("green-not-legal-conformance",
+               "Und er ist ein Protokoll, kein Zertifikat: Ein "
+               "gr&uuml;nes Ergebnis darin hei&szlig;t nur <em>keine "
                "implementierte fatale Regel hat ausgel&ouml;st</em> &mdash; "
                "nicht &bdquo;rechtsverbindlich konforme XRechnung&ldquo;")
       + ".</p>")

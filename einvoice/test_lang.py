@@ -18,6 +18,14 @@ and WITHOUT changing which rules fire:
   * The ``einvoice validate --lang de`` CLI swaps ONLY the human-facing message;
     rule ids, the offending element, ``--json`` output and the exit code are
     unchanged.
+  * The REPORT surfaces split the same way (T-VHRPTH.4): the two HUMAN formats
+    ``einvoice.report.LOCALISED_FORMATS`` — ``build_html`` and ``build_text`` —
+    honour ``--lang``, with German document chrome and a truthful
+    ``<html lang=…>``; the seven machine formats named in
+    ``LANGUAGE_NEUTRAL_FORMATS`` are byte-identical with and without
+    ``--lang de``. A rule with no official German keeps its English sentence,
+    visibly marked ``[en]`` and tagged ``lang="en"``, and the one-argument
+    ``build_html(report)`` the browser validator calls stays English.
 
 Run: python3 test_lang.py
 """
@@ -467,6 +475,281 @@ class ExplainLang(unittest.TestCase):
                         if "--explain" in ln]
         self.assertEqual(len(explain_line), 1)
         self.assertIn("--lang", explain_line[0])
+
+
+# --------------------------------------------------------------------------- #
+# T-VHRPTH.4 — the REPORT surfaces under --lang: the human HTML/text documents
+# honour it, and the seven machine documents are pinned language-neutral.
+#
+# WHY THIS BLOCK EXISTS (measured at HEAD 544753e, before the fix): the entire
+# buyer pool exists because of a GERMAN legal mandate, and the one artifact a
+# German company forwards to its accountant could not be produced in German.
+# `validate --profile xrechnung --lang de --format html broken.xml` emitted zero
+# German rule sentences and opened `<html lang="en">` — the flag was accepted
+# and silently dropped, so the user had every reason to believe a German
+# document had been produced.
+# --------------------------------------------------------------------------- #
+
+#: The invoice the acceptance criteria and the onboarding docs both name: under
+#: the xrechnung profile it fires BR-DE-2, which DOES carry official KoSIT
+#: German, so it is the fixture that can tell "German rendered" from "German
+#: silently dropped".
+HTML_DE_FIXTURE = os.path.join(HERE, "examples", "01-missing-fields",
+                               "broken.xml")
+
+
+def _html(*argv):
+    """``einvoice validate ... --format html`` stdout, through the real CLI."""
+    with _Capture(list(argv)) as cap:
+        pass
+    return cap.out
+
+
+class LanguageNeutralFormatsAreDeclared(unittest.TestCase):
+    """The machine/human split is a NAMED decision, not per-emitter accident."""
+
+    def test_the_seven_machine_formats_are_named(self):
+        from einvoice.report import LANGUAGE_NEUTRAL_FORMATS
+        self.assertEqual(
+            sorted(LANGUAGE_NEUTRAL_FORMATS),
+            ["azure", "badge", "github", "gitlab", "json", "junit", "sarif"])
+
+    def test_the_partition_over_report_formats_is_total_and_disjoint(self):
+        # A newly registered emitter cannot stay unclassified: it is either
+        # declared machine-facing or it lands in LOCALISED_FORMATS and MUST
+        # accept the lang render_report hands it.
+        from einvoice.report import (LANGUAGE_NEUTRAL_FORMATS,
+                                     LOCALISED_FORMATS, REPORT_FORMATS)
+        self.assertEqual(LOCALISED_FORMATS, ("html", "text"),
+                         "the localisable surfaces changed — that is a "
+                         "decision, so restate it here deliberately")
+        self.assertEqual(
+            sorted(set(LANGUAGE_NEUTRAL_FORMATS) | set(LOCALISED_FORMATS)),
+            sorted(REPORT_FORMATS))
+        self.assertEqual(
+            set(LANGUAGE_NEUTRAL_FORMATS) & set(LOCALISED_FORMATS), set())
+
+    def test_the_reason_and_the_cross_reference_are_written_down(self):
+        # The constant must carry its REASON and point at the one place that
+        # owns per-entry-point flag decisions, instead of becoming a third
+        # independent list nobody can trace.
+        with open(os.path.join(HERE, "einvoice", "report.py"),
+                  encoding="utf-8") as fh:
+            src = fh.read()
+        head = src.split("LANGUAGE_NEUTRAL_FORMATS = ")[0]
+        comment = head[head.rindex("#: LANGUAGE"):]
+        self.assertIn("ENTRY_POINT_CAPABILITIES", comment)
+        self.assertIn("rule id", comment.lower())
+        # ...and the over-broad claim the code contradicted is gone.
+        self.assertNotIn(
+            "report documents themselves are machine-facing and "
+            "language-neutral", src)
+
+    def test_machine_formats_are_byte_identical_with_and_without_lang_de(self):
+        # END TO END through the console script, the surface a user types.
+        from einvoice.report import LANGUAGE_NEUTRAL_FORMATS
+        for fmt in LANGUAGE_NEUTRAL_FORMATS:
+            with self.subTest(fmt=fmt):
+                base = ["validate", HTML_DE_FIXTURE, "--profile=xrechnung",
+                        "--format=%s" % fmt]
+                with _Capture(base) as en:
+                    pass
+                with _Capture(base + ["--lang=de"]) as de:
+                    pass
+                self.assertEqual(en.rc, de.rc)
+                self.assertEqual(
+                    en.out, de.out,
+                    "--lang de changed the %s body; machine consumers key on "
+                    "rule ids and sarif/gitlab FINGERPRINT the message, so a "
+                    "locale change would re-key every stored finding" % fmt)
+
+    def test_render_report_drops_lang_for_every_machine_format(self):
+        # The library-level guarantee, so a future caller that passes lang in
+        # cannot localise a machine body even by accident.
+        from einvoice.report import (build_report, render_report,
+                                     LANGUAGE_NEUTRAL_FORMATS)
+        rep = build_report(HTML_DE_FIXTURE, profile="xrechnung")
+        for fmt in LANGUAGE_NEUTRAL_FORMATS:
+            with self.subTest(fmt=fmt):
+                self.assertEqual(render_report(rep, fmt),
+                                 render_report(rep, fmt, lang="de"))
+        # Precondition: this report really does carry a rule WITH official
+        # German, so the equality above is not vacuous.
+        self.assertTrue(
+            any(R.official_message(v["rule"], "de") for v in rep["violations"]),
+            "fixture drift: no finding carries official German, so the "
+            "byte-identity assertions prove nothing")
+
+
+class HtmlHonoursLang(unittest.TestCase):
+    """``--format html`` under ``--lang de`` — the accountant's document."""
+
+    def test_de_emits_official_german_and_declares_de(self):
+        doc = _html("validate", HTML_DE_FIXTURE, "--profile=xrechnung",
+                    "--lang=de", "--format=html")
+        self.assertIn('<html lang="de">', doc)
+        # The German sentence is the catalog's KoSIT text VERBATIM (escaped),
+        # not a paraphrase authored here or by the emitter.
+        official = CATALOG["BR-DE-2"]["message_de"]
+        self.assertIn("Die Gruppe", official)   # sanity on the fixture data
+        import html as _htmlmod
+        self.assertIn(_htmlmod.escape(official, quote=True), doc)
+        # German document chrome, so `lang="de"` is not a false declaration.
+        self.assertIn("<title>einvoice Konformitätsbericht</title>", doc)
+        self.assertIn("Nicht konform", doc)
+        self.assertIn("Behebung", doc)
+        self.assertNotIn("Not conformant", doc)
+        self.assertNotIn("How to fix", doc)
+
+    def test_english_default_did_not_drift(self):
+        base = ["validate", HTML_DE_FIXTURE, "--profile=xrechnung",
+                "--format=html"]
+        doc = _html(*base)
+        self.assertIn('<html lang="en">', doc)
+        self.assertIn("EN 16931 / XRechnung conformance report", doc)
+        self.assertIn("Not conformant", doc)
+        self.assertIn("How to fix", doc)
+        self.assertNotIn("Die Gruppe", doc)
+        self.assertNotIn("lang=\"de\"", doc)
+        # No element-level language tagging and no fallback marker leaks into
+        # the English document — it is byte-for-byte the historic emitter.
+        self.assertNotIn(' lang="en"', doc.split("\n", 2)[2])
+        self.assertNotIn("[en]", doc)
+        # An explicit --lang=en, the library default and the one-argument
+        # browser call must all be the SAME bytes.
+        from einvoice.report import build_report, build_html
+        rep = build_report(HTML_DE_FIXTURE, profile="xrechnung")
+        rep["source"] = HTML_DE_FIXTURE
+        self.assertEqual(doc, _html(*(base + ["--lang=en"])))
+        self.assertEqual(build_html(rep), build_html(rep, lang="en"))
+
+    def test_browser_one_argument_call_is_english(self):
+        # www/validate/index.html runs build_html(_rep) inside Pyodide on an
+        # ENGLISH page; that call must stay valid and stay English.
+        from einvoice.report import build_report, build_html
+        doc = build_html(build_report(HTML_DE_FIXTURE, profile="xrechnung"))
+        self.assertIn('<html lang="en">', doc)
+        self.assertNotIn("Die Gruppe", doc)
+
+    def test_a_rule_without_official_german_is_labelled_not_silently_english(
+            self):
+        # BR-CL-01 (the FALLBACK_FIXTURE's first fatal) is a CORE rule: no
+        # official German exists, so the English sentence must survive AND say
+        # so. Silence here is exactly how a reader comes to believe an English
+        # sentence is the German legal wording.
+        doc = _html("validate", FALLBACK_FIXTURE, "--lang=de",
+                    "--format=html")
+        self.assertIn('<html lang="de">', doc)
+        self.assertIsNone(R.official_message("BR-CL-01", "de"),
+                          "fixture drift: BR-CL-01 gained official German, so "
+                          "this no longer exercises the fallback")
+        self.assertIn("The document type code (BT-3)", doc)
+        # Visible marker, and an element-level lang so the document's own
+        # declaration stays true where the text is not German.
+        self.assertIn('<p class="msg" lang="en">[en] ', doc)
+        # ...explained in the document, with the honest limit about titles.
+        self.assertIn("mit [en] markiert", doc)
+        self.assertIn("Regeltitel und Behebungshinweise", doc)
+
+    def test_no_fallback_note_marker_sentence_when_nothing_fell_back(self):
+        # Every finding of this fixture carries official German, so the note
+        # must NOT point at an [en] marker that is not on the page.
+        doc = _html("validate", HTML_DE_FIXTURE, "--profile=xrechnung",
+                    "--lang=de", "--format=html")
+        self.assertNotIn("[en]", doc)
+        self.assertIn("amtliche KoSIT-Wortlaut", doc)
+
+    def test_html_and_text_surfaces_show_the_same_german_sentence(self):
+        # ONE resolver, so the forwarded document and the terminal cannot
+        # phrase the same rule differently.
+        doc = _html("validate", HTML_DE_FIXTURE, "--profile=xrechnung",
+                    "--lang=de", "--format=html")
+        with _Capture(["validate", HTML_DE_FIXTURE, "--profile=xrechnung",
+                       "--lang=de"]) as summary:
+            pass
+        sentence = R.resolve_message("BR-DE-2", "unused-english", "de")
+        self.assertIn(sentence, summary.out)
+        import html as _htmlmod
+        self.assertIn(_htmlmod.escape(sentence, quote=True), doc)
+
+    def test_unknown_language_renders_english_and_declares_english(self):
+        # Declaring a language whose text we do not have is the very lie this
+        # parameter fixes, so an unroutable value must fall back honestly.
+        # (The CLI rejects such a value with exit 2 long before this; the
+        # library must still not lie if called directly.)
+        from einvoice.report import build_report, build_html
+        rep = build_report(HTML_DE_FIXTURE, profile="xrechnung")
+        doc = build_html(rep, lang="fr")
+        self.assertIn('<html lang="en">', doc)
+        self.assertEqual(doc, build_html(rep))
+
+    def test_report_entry_point_still_refuses_lang_for_a_document(self):
+        # The declared divergence stays: einvoice.report's published contract
+        # is the machine document, so it refuses rather than swallows.
+        with _Capture(["--lang", "de", "--format", "html", HTML_DE_FIXTURE],
+                      fn=report_main) as cap:
+            pass
+        self.assertNotEqual(cap.rc, EXIT_OK)
+        self.assertIn("--lang applies only to --explain", cap.err)
+        self.assertEqual(cap.out, "")
+
+
+class HtmlChromeTable(unittest.TestCase):
+    """The authored chrome table: complete per language, honest when not."""
+
+    def test_every_language_row_covers_every_english_key(self):
+        from einvoice.report import _HTML_CHROME
+        english = set(_HTML_CHROME["en"])
+        for lang, table in _HTML_CHROME.items():
+            with self.subTest(lang=lang):
+                self.assertEqual(
+                    english - set(table), set(),
+                    "language %r is missing chrome keys; the document would "
+                    "render them English with a [en] marker" % lang)
+                self.assertEqual(set(table) - english, set(),
+                                 "language %r has keys English lacks" % lang)
+
+    def test_a_missing_key_falls_back_to_english_visibly(self):
+        # The fallback is EXPLICIT and VISIBLE: a partially translated document
+        # must say so on its face rather than quietly mix languages.
+        from einvoice.report import _chrome, _HTML_CHROME
+        self.assertEqual(_chrome("h1", "en"), _HTML_CHROME["en"]["h1"])
+        self.assertEqual(_chrome("h1", "fr"),
+                         _HTML_CHROME["en"]["h1"] + " [en]")
+        _HTML_CHROME["zz"] = {"h1": "ZZ heading"}
+        try:
+            self.assertEqual(_chrome("h1", "zz"), "ZZ heading")
+            self.assertEqual(_chrome("footer", "zz"),
+                             _HTML_CHROME["en"]["footer"] + " [en]")
+        finally:
+            del _HTML_CHROME["zz"]
+
+    def test_chrome_does_not_translate_rule_text(self):
+        # Rule wording comes ONLY from the catalog. Nothing in the chrome table
+        # may look like a rule sentence, or we would be authoring legal text.
+        from einvoice.report import _HTML_CHROME
+        for lang, table in _HTML_CHROME.items():
+            for key, value in table.items():
+                with self.subTest(lang=lang, key=key):
+                    self.assertNotIn("BR-", value)
+                    self.assertNotIn("muss übermittelt werden", value)
+
+
+class TextFormatHonoursLang(unittest.TestCase):
+    """``build_text`` — the other human surface in LOCALISED_FORMATS."""
+
+    def test_de_swaps_the_message_and_keeps_the_status_token(self):
+        from einvoice.report import build_report, build_text, render_report
+        rep = build_report(HTML_DE_FIXTURE, profile="xrechnung")
+        en, de = build_text(rep), build_text(rep, lang="de")
+        self.assertIn("Die Gruppe", de)
+        self.assertNotIn("Die Gruppe", en)
+        # Grep-stable facts are language-independent in both.
+        for out in (en, de):
+            self.assertTrue(out.startswith("FAIL  "))
+            self.assertIn("[fatal] BR-DE-2:", out)
+        self.assertEqual(de, render_report(rep, "text", lang="de"))
+        self.assertEqual(en, render_report(rep, "text"))
 
 
 if __name__ == "__main__":

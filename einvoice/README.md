@@ -602,8 +602,16 @@ Syntax-binding warnings and XRechnung `warning`/`information` findings are
   invoice, so a directory under those is a usage error (`2`) naming the per-file
   command. An unknown format, `--format` with no value, `--format` twice with
   conflicting values, or `--format` together with `--json` are all clean usage
-  errors (`2`) — never a silent last-wins. `--quiet` and `--lang` are no-ops for
-  a machine format, exactly as with `--json`. See
+  errors (`2`) — never a silent last-wins. `--quiet` is a no-op for a machine
+  format, exactly as with `--json` — the document *is* the output, so there is
+  no summary to silence. `--lang` reaches the two **human** formats, `html` and
+  `text`: `--lang de --format html` renders a German document (official KoSIT
+  rule text where the rule has it, German chrome, `<html lang="de">`). The seven
+  machine bodies — `json`, `junit`, `sarif`, `gitlab`, `github`, `azure`,
+  `badge` — are **byte-identical** with and without `--lang de`: their consumers
+  key on the rule id, and the `json` document is what `--baseline` diffs on a key
+  that includes the message, so localising it would score every finding as
+  resolved-plus-new the first time a pipeline changed its locale. See
   [`EXIT-CODES.md`](https://github.com/verifyhash/verifyhash/blob/main/einvoice/EXIT-CODES.md) for the full contract.
 - `--quiet` — suppress the human `PASS`/`FAIL`/`Syntax-binding warnings` summary
   on stdout. The **exit code is unchanged**, and `--quiet` does *not* suppress
@@ -769,9 +777,14 @@ with it — the CLI does not depend on that file existing.
 
 `--lang de` swaps the language of the human-facing failure message **only**.
 Which rules fire, the offending element, the `--json` payload and the exit code
-are all unchanged — the JSON output is byte-identical with or without the flag
-(pinned by `test_lang.py`). The coverage is deliberately narrow, and stated here
-without spin:
+are all unchanged — the JSON output is byte-identical with or without the flag,
+as are the other six machine report bodies (`junit`, `sarif`, `gitlab`,
+`github`, `azure`, `badge`); all seven are pinned byte-for-byte by
+`test_lang.py`. It reaches the terminal summary and the two **human** report
+formats: `--format html` produces a German document (German title, heading,
+banner and labels, and `<html lang="de">` so the declaration matches the
+content) and `--format text` swaps the message on each finding line. The
+coverage is deliberately narrow, and stated here without spin:
 
 - **Exactly 50 rules carry an official German message**, surfaced by
   `--lang de`. These are precisely the `remediation_catalog.json` entries tagged
@@ -794,7 +807,17 @@ without spin:
   to quote, so under `--lang de` they fall back to their English message
   unchanged. This is silence-with-reason, not a coverage gap: showing the
   authoritative English assert is more honest than inventing a German one. There
-  is **no machine translation** anywhere in this surface.
+  is **no machine translation** anywhere in this surface. In the HTML report such
+  a finding is prefixed with a visible `[en]`, its paragraph is tagged
+  `lang="en"`, and one note in the document explains the marker — an English
+  sentence sitting silently inside a `lang="de"` page is how a reader comes to
+  believe they are holding the German legal wording.
+- **Rule titles and fix hints stay English in every language.** They come from
+  our own remediation catalog, not from the standard, so the German HTML report
+  tags them `lang="en"` and says so in the same note rather than passing our
+  wording off as the official text. (`--explain --lang de` does show the
+  catalog's `title_de` / `fix_de`, because that block prints a `german` line
+  naming their provenance.)
 
 This official-German message is a **CLI / report human-message** feature: it is
 not injected into `--json`, and this task added no field to the generated

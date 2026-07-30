@@ -79,24 +79,41 @@ Global flags:
                inventing an aggregate shape. An unknown name is a usage error
                (2) listing the valid ones; ``--format`` together with ``--json``,
                or twice with conflicting values, is likewise a usage error (2)
-               rather than a silent last-wins surprise. ``--lang`` affects only
-               the human summary and ``--quiet`` only suppresses it, so neither
-               changes a machine-format body (identical to how they behave with
-               ``--json`` today).
+               rather than a silent last-wins surprise. ``--quiet`` only
+               suppresses the human summary, so it never changes a format body
+               (identical to how it behaves with ``--json`` today). ``--lang``
+               reaches the two HUMAN formats — ``html`` and ``text``, the
+               members of ``einvoice.report.LOCALISED_FORMATS`` — and NOTHING
+               else: the seven machine bodies named in
+               ``einvoice.report.LANGUAGE_NEUTRAL_FORMATS`` (json, junit, sarif,
+               gitlab, github, azure, badge) are byte-identical with and without
+               ``--lang de``: their consumers key on the rule id, and the
+               ``json`` document is DIFFED by ``--baseline`` on a key that
+               includes the message, so localising it would score every finding
+               as resolved-plus-new on a locale change.
     --lang     language of HUMAN-facing text only: ``en`` (default, unchanged
                behaviour) or ``de``. Accepted on ``validate``, ``validate-batch``
                and ``--explain``. Under ``de`` a violated rule that carries an
                OFFICIAL German message (the BR-DE family, whose vendored KoSIT
                XRechnung ``<sch:assert>`` text is German) is shown with that
                verbatim German string; every other rule keeps its English
-               message. On ``--explain`` the block additionally swaps in the
+               message. It applies to the terminal summary AND to the two human
+               report formats: ``--format html`` renders a German document —
+               German title, headings, banner and labels, and ``<html
+               lang="de">`` so the declaration matches the content — while
+               ``--format text`` swaps the message on each finding line. A
+               finding whose rule has NO official German text stays English and
+               is marked ``[en]`` in the HTML, which also states in the document
+               that rule titles and fix hints come from the English remediation
+               catalog. On ``--explain`` the block additionally swaps in the
                catalog's ``title_de`` / ``fix_de`` and prints a ``german`` line
                naming the provenance of what it just showed (official KoSIT text
                vs. project-authored translation) — see EXIT-CODES.md for the
-               measured coverage. ``--lang`` never affects ``--json`` output,
-               rule ids, severities or which rules fire — only displayed text,
-               and nothing is translated at run time: every German byte is a
-               string already committed in ``remediation_catalog.json``.
+               measured coverage. ``--lang`` never affects ``--json`` output, any
+               machine format body (see ``--format``), rule ids, severities or
+               which rules fire — only displayed text, and nothing is translated
+               at run time: every German byte is a string already committed in
+               ``remediation_catalog.json``.
 
 Config file (opt-in defaults — see ``einvoice/config.py``):
     A ``.einvoice.toml`` in the current working directory, else a
@@ -489,10 +506,14 @@ ENTRY_POINT_CAPABILITIES = {
             "and language-neutral'). That refusal is correct and is pinned "
             "verbatim: a language flag that a machine-facing document "
             "silently swallows is how a user comes to believe a translation "
-            "happened. The console script applies it to the HUMAN summary, "
-            "which is the only thing there is to translate. For the same "
-            "reason it is refused alongside --baseline on the console "
-            "script: a diff document has no human summary."),
+            "happened. The console script applies it to every HUMAN surface it "
+            "owns: the validate summary and the two formats in "
+            "einvoice.report.LOCALISED_FORMATS (html, text). The other seven "
+            "formats are einvoice.report.LANGUAGE_NEUTRAL_FORMATS and are "
+            "byte-identical in every language, which is what makes accepting "
+            "the flag on --format honest rather than a second silent swallow. "
+            "For the same reason it is refused alongside --baseline on the "
+            "console script: a diff document has no human surface."),
     },
     "json": {
         "accepted_by": ("einvoice",),
@@ -1111,7 +1132,7 @@ def _report_unsupported_container(display_path, exc, as_json):
     return EXIT_PARSE
 
 
-def _run_validate_format(path, display_path, fmt, profile, fail_on):
+def _run_validate_format(path, display_path, fmt, profile, fail_on, lang="en"):
     """Drive ``einvoice validate --format <fmt>`` for one of the seven
     :data:`DELEGATED_FORMATS` (junit/sarif/gitlab/github/azure/html/badge).
 
@@ -1153,7 +1174,18 @@ def _run_validate_format(path, display_path, fmt, profile, fail_on):
 
     ``--quiet`` is deliberately not a parameter: exactly as with ``--json``
     today, the document IS the output of the run, so quiet has nothing to
-    suppress. ``--lang`` likewise only ever selected the human summary string.
+    suppress.
+
+    ``--lang`` IS a parameter (T-VHRPTH.4), and it is the resolved value —
+    flag, config file or default — not the raw flag. Six of the seven formats
+    routed here are machine documents and ignore it by construction
+    (``einvoice.report.LANGUAGE_NEUTRAL_FORMATS`` is consulted inside
+    ``render_report``, so their bytes are identical in every language); the
+    seventh, ``html``, is the ONE artifact a German company forwards to its
+    accountant, and it renders the official KoSIT German rule text and German
+    chrome under ``de``. Before this it was accepted and silently dropped, so a
+    user who typed ``--lang de --format html`` got an English document that
+    declared ``<html lang="en">`` and had no way to notice.
     """
     # Local import, mirroring _run_explain: the module is already a module-level
     # dependency of this file, so nothing new is pulled in and the cost stays off
@@ -1166,7 +1198,7 @@ def _run_validate_format(path, display_path, fmt, profile, fail_on):
     # forms already follow via ``display_path``.
     if display_path != path:
         report["source"] = display_path
-    sys.stdout.write(render_report(report, fmt))
+    sys.stdout.write(render_report(report, fmt, lang=lang))
     if report.get("error"):
         return EXIT_PARSE
     if _report_crosses(report, fail_on):
@@ -1965,7 +1997,7 @@ def _main(argv=None):
 
         if fmt in DELEGATED_FORMATS:
             return _run_validate_format(path, display_path, fmt, profile,
-                                        fail_on)
+                                        fail_on, lang)
 
         # Factur-X / ZUGFeRD PDF/A-3 container (T-VHERG.5). The dominant
         # delivery form under the German mandate is EN 16931 XML wrapped in a

@@ -1014,9 +1014,38 @@ class HtmlBannerCountsAddUp(unittest.TestCase):
         self.assertIn("3 non-fatal findings (warnings do not invalidate)", doc)
 
     def test_build_html_takes_exactly_one_argument(self):
-        """The browser validator calls ``build_html(_rep)`` — one argument."""
+        """The browser validator calls ``build_html(_rep)`` — one argument.
+
+        ``www/validate/index.html`` (and ``gen_site.py``, which emits it) runs
+        ``_einvoice_report.build_html(_rep)`` inside Pyodide with exactly one
+        positional argument, and the validator page is an ENGLISH page. Since
+        T-VHRPTH.4 the emitter also accepts ``lang`` so ``--lang de --format
+        html`` can produce the German document the German mandate's users need,
+        so this pins the invariant the browser actually depends on rather than
+        the parameter count:
+
+          * the first parameter is still ``report``;
+          * EVERY parameter after it is keyword-defaulted, so a one-argument
+            call is a valid binding and can never become a TypeError;
+          * that one-argument call really returns the ENGLISH document.
+        """
         sig = inspect.signature(build_html)
-        self.assertEqual(list(sig.parameters), ["report"])
+        params = list(sig.parameters.values())
+        self.assertEqual(params[0].name, "report")
+        for p in params[1:]:
+            self.assertIsNot(
+                p.default, inspect.Parameter.empty,
+                "build_html parameter %r has no default, so the browser's "
+                "one-argument build_html(_rep) call would raise TypeError"
+                % p.name)
+            self.assertIn(p.kind, (inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                                   inspect.Parameter.KEYWORD_ONLY), p.name)
+        # The binding really is valid with one argument...
+        sig.bind(build_report(BASE, profile="xrechnung"))
+        # ...and what it produces is the English document the page ships.
+        doc = build_html(build_report(BASE, profile="xrechnung"))
+        self.assertIn('<html lang="en">', doc)
+        self.assertIn("EN 16931 / XRechnung conformance report", doc)
 
 
 class HtmlBaselineRejected(unittest.TestCase):

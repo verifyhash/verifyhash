@@ -144,6 +144,44 @@ REPORT_FORMATS = ("json", "junit", "sarif", "gitlab", "github", "azure",
 #: list instead of retyping the tuple.
 BATCH_FORMATS = ("json", "junit", "text")
 
+#: LANGUAGE NEUTRALITY, AS A DECISION RATHER THAN AN ACCIDENT (T-VHRPTH.4).
+#:
+#: These seven emitters are MACHINE-facing documents and are pinned here as
+#: language-neutral BY DESIGN: their consumers (a CI annotation parser, a SARIF
+#: viewer, a JUnit reporter, a shields.io endpoint, a Code-Quality importer)
+#: key on the stable RULE ID, the severity and the counts, not on the human
+#: sentence — :func:`_sarif_fingerprint` and :func:`_gitlab_fingerprint`
+#: deliberately hash the rule id and the LOCATION and leave the message out,
+#: precisely because the sentence is not part of a finding's identity. The
+#: ``json`` document goes further and is DIFFED across runs: ``--baseline``
+#: keys a violation on :data:`DIFF_KEY`, which DOES include ``message``, so a
+#: localised json report would not read as a translated report — diffed against
+#: a baseline captured under another locale it would score every finding as
+#: resolved-plus-new and fail the build on a language change. So
+#: :func:`render_report` renders
+#: every format named here with ``lang="en"`` regardless of what the caller
+#: asked for, and the bytes are identical with and without ``--lang de``
+#: (pinned by ``test_lang.py``).
+#:
+#: This is NOT a third independent list of per-surface decisions: the REASONED
+#: per-entry-point flag matrix lives in ONE place, ``einvoice.cli``'s
+#: ``ENTRY_POINT_CAPABILITIES`` (row ``lang``), and this tuple is the
+#: format-level mechanism that row describes. Adding an emitter to
+#: :data:`REPORT_FORMATS` forces a choice: name it here, or it lands in
+#: :data:`LOCALISED_FORMATS` below and MUST accept a ``lang`` — there is no
+#: third state in which a language flag can be swallowed without effect.
+LANGUAGE_NEUTRAL_FORMATS = ("json", "junit", "sarif", "gitlab", "github",
+                            "azure", "badge")
+
+#: The complement of :data:`LANGUAGE_NEUTRAL_FORMATS` over
+#: :data:`REPORT_FORMATS` — the HUMAN-facing surfaces, the ones a person reads
+#: and a German company forwards to its accountant, and therefore the only ones
+#: ``--lang`` may change. DERIVED, not retyped, so the two tuples cannot drift
+#: into overlapping or into leaving a format unclassified; ``test_lang.py``
+#: pins the partition to exactly ``("html", "text")``.
+LOCALISED_FORMATS = tuple(f for f in REPORT_FORMATS
+                          if f not in LANGUAGE_NEUTRAL_FORMATS)
+
 #: Documentation of the versioned report shape. Every key the report can carry
 #: is described here; REPORT-SCHEMA.md renders the same contract for humans, and
 #: ../report.schema.json is the MACHINE-CHECKABLE form (JSON Schema draft
@@ -998,12 +1036,21 @@ def build_batch_text(batch):
     return "\n".join(lines) + "\n"
 
 
-def build_text(report):
+def build_text(report, lang="en"):
     """Render a SINGLE-file report as a concise text summary (additive format).
 
     A status header (``PASS`` / ``FAIL`` / ``ERROR``) followed by one indented
     line per violation. Pure projection — no rule logic. This is a new,
     additive format: it never affects the default JSON bytes.
+
+    ``lang`` (keyword-defaulted, so every existing one-argument call is
+    unchanged to the byte) selects the language of the per-violation MESSAGE
+    only, through the same ``einvoice.remediation.resolve_message`` the HTML
+    report and ``einvoice validate``'s human summary use: the official KoSIT
+    German assert where the rule carries one, the English message otherwise.
+    The status tokens (``PASS``/``FAIL``/``ERROR``), rule ids, severities,
+    fields and positions are language-independent facts and never move — this
+    is a terse machine-greppable summary line, so it gets no translated chrome.
     """
     src = report.get("source", "")
     if report.get("error"):
@@ -1017,6 +1064,7 @@ def build_text(report):
         tail = " (%d warning%s)" % (wc, "" if wc == 1 else "s") if wc else ""
         head = "PASS  %s  conformant%s" % (src, tail)
     lines = [head]
+    catalog = _remediation_catalog()
     for v in report.get("violations", []):
         field = v.get("field")
         # The XPath says WHICH element; the position says WHERE it is — either
@@ -1025,7 +1073,9 @@ def build_text(report):
         # missing thing GOES (T-VHLOC.6). A finding the engine could not place
         # at all keeps its historic bytes exactly.
         lines.append("  [%s] %s: %s%s%s" % (
-            v.get("severity", ""), v.get("rule", ""), v.get("message", ""),
+            v.get("severity", ""), v.get("rule", ""),
+            resolve_message(v.get("rule", ""), v.get("message", ""), lang,
+                            catalog=catalog),
             " (%s)" % field if field else "",
             _position_suffix(src, v.get("source_line"))
             or _insertion_point_suffix(src, v.get("insertion_point_line"))))
@@ -2349,6 +2399,155 @@ footer { color: #57606a; font-size: .8rem; margin-top: 2rem; }
 """.strip()
 
 
+#: THE DOCUMENT CHROME, KEYED BY LANGUAGE (T-VHRPTH.4).
+#:
+#: WHY THIS TABLE EXISTS. The HTML report is the one artifact of ours that a
+#: German company forwards to its accountant, and the whole buyer pool exists
+#: because of a GERMAN legal mandate — so ``--lang de`` has to produce a German
+#: document, and a document that declares ``<html lang="de">`` while every
+#: heading, label and banner in it is English is itself a false declaration
+#: (screen readers switch voice on it, browser translation keys off it). The
+#: FIXED, small set of strings the document itself authors therefore lives here,
+#: one dict per language.
+#:
+#: WHAT IS *NOT* HERE, on purpose: rule text. Titles, messages and fix hints are
+#: never translated by this module. A rule's German sentence comes from ONE
+#: place, ``einvoice.remediation.resolve_message`` reading the vendored official
+#: KoSIT XRechnung ``<sch:assert>`` text out of the committed catalog, and only
+#: the ~50 BR-DE-family rules that actually carry one have it. Everything else
+#: keeps its English original, VISIBLY marked (``fallback_marker``) and
+#: explained (``fallback_note``) — never quietly reworded, because presenting an
+#: authored translation as the official assert would misrepresent the legal text
+#: the reader is being told they violated.
+#:
+#: ENGLISH IS THE REFERENCE ROW. Every key exists in ``en``, and :func:`_chrome`
+#: falls back to it for any key a language lacks, appending a VISIBLE ``[en]``
+#: so a partially translated document says so on its face instead of silently
+#: mixing languages. The ``en`` values below are byte-for-byte the strings this
+#: emitter has always produced, so the default document is unchanged.
+_HTML_CHROME = {
+    "en": {
+        "doc_title": "einvoice conformance report",
+        "h1": "EN 16931 / XRechnung conformance report",
+        "meta": "source: %s &middot; profile: %s",
+        "stdin": "(stdin)",
+        "parse_error_banner": ("Not well-formed XML — the invoice could not "
+                              "be parsed."),
+        "banner_pass": "Conformant",
+        "banner_fail": "Not conformant",
+        "no_findings": "no findings",
+        "pass_nonfatal_sg": ("%d non-fatal finding (warnings do not "
+                             "invalidate)"),
+        "pass_nonfatal_pl": ("%d non-fatal findings (warnings do not "
+                             "invalidate)"),
+        "counts_sg": "%d finding &middot; %d fatal &middot; %d non-fatal",
+        "counts_pl": "%d findings &middot; %d fatal &middot; %d non-fatal",
+        "label_fix": "How to fix",
+        "label_terms": "Business terms",
+        "label_field": "Field",
+        "label_location": "Location",
+        "note": ("Rule ids with a published reference page link to it; ids "
+                 "without one are shown plain. Offline, <code>einvoice "
+                 "--explain &lt;RULE-ID&gt;</code> prints the same rule text "
+                 "from your local install."),
+        # The two provenance rows are never emitted in an ENGLISH document
+        # (there is nothing to fall back from, and no translation to disclose);
+        # they exist here as the reference wording every other row translates.
+        "provenance_note": ("Translated rule sentences are the official KoSIT "
+                            "XRechnung Schematron text, quoted verbatim — "
+                            "nothing is machine-translated. Rule titles and "
+                            "fix hints come from the English remediation "
+                            "catalog and stay English."),
+        "fallback_note": ("Rules with no official text in this language are "
+                          "marked [en] and shown in the English original."),
+        "fallback_marker": "[en]",
+        "footer": ("Static conformance artifact — reflects this one report run "
+                   "against the invoice above. Generated offline by einvoice; "
+                   "no network, no tracking."),
+    },
+    "de": {
+        "doc_title": "einvoice Konformitätsbericht",
+        "h1": "Konformitätsbericht EN 16931 / XRechnung",
+        "meta": "Datei: %s &middot; Profil: %s",
+        "stdin": "(stdin)",
+        "parse_error_banner": ("Kein wohlgeformtes XML — die Rechnung konnte "
+                              "nicht gelesen werden."),
+        "banner_pass": "Konform",
+        "banner_fail": "Nicht konform",
+        "no_findings": "keine Befunde",
+        "pass_nonfatal_sg": ("%d nicht fataler Befund (Warnungen machen die "
+                             "Rechnung nicht ungültig)"),
+        "pass_nonfatal_pl": ("%d nicht fatale Befunde (Warnungen machen die "
+                             "Rechnung nicht ungültig)"),
+        "counts_sg": "%d Befund &middot; %d fatal &middot; %d nicht fatal",
+        "counts_pl": "%d Befunde &middot; %d fatal &middot; %d nicht fatal",
+        "label_fix": "Behebung",
+        "label_terms": "Geschäftsbegriffe (BT/BG)",
+        "label_field": "Feld",
+        "label_location": "Stelle im XML",
+        "note": ("Regel-IDs mit veröffentlichter Referenzseite sind verlinkt; "
+                 "IDs ohne eine solche Seite stehen als reiner Text. Offline "
+                 "gibt <code>einvoice --explain &lt;REGEL-ID&gt;</code> "
+                 "denselben Regeltext aus Ihrer lokalen Installation aus."),
+        "provenance_note": (
+            "Die deutschen Regelsätze sind der amtliche KoSIT-Wortlaut der "
+            "XRechnung-Schematron-Regel, Wort für Wort übernommen — es wird "
+            "nichts maschinell übersetzt. Regeltitel und Behebungshinweise "
+            "stammen aus dem englischen Remediation-Katalog und bleiben "
+            "englisch."),
+        "fallback_note": (
+            "Regeln ohne amtlichen deutschen Text sind mit [en] markiert und "
+            "stehen im englischen Original."),
+        "fallback_marker": "[en]",
+        "footer": ("Statisches Konformitäts-Artefakt — es hält genau diesen "
+                   "einen Prüflauf gegen die oben genannte Rechnung fest. "
+                   "Offline von einvoice erzeugt; kein Netzwerkzugriff, kein "
+                   "Tracking."),
+    },
+}
+
+#: Appended to an English chrome string that stood in for a MISSING translation,
+#: so a partially translated document declares the mix visibly rather than
+#: passing English prose off as the requested language.
+_CHROME_FALLBACK_SUFFIX = " [en]"
+
+
+def _chrome(key, lang="en"):
+    """One document-chrome string from :data:`_HTML_CHROME`, in ``lang``.
+
+    Returns the requested language's wording when it has that key; otherwise
+    the ENGLISH wording with a visible :data:`_CHROME_FALLBACK_SUFFIX`
+    appended (an unknown language, or a language whose row is incomplete, must
+    LOOK partly English rather than silently be it). ``lang="en"`` returns the
+    English string untouched, so the default document keeps its exact bytes.
+
+    An unknown ``key`` raises ``KeyError`` off the English row — that is a
+    programming error in this module, not a caller's input, and must not be
+    swallowed into an empty label.
+    """
+    table = _HTML_CHROME.get(lang)
+    if table is not None and key in table:
+        return table[key]
+    english = _HTML_CHROME["en"][key]
+    if lang == "en":
+        return english
+    return english + _CHROME_FALLBACK_SUFFIX
+
+
+def _en_attr(doc_lang):
+    """``' lang="en"'`` when the document is NOT English, else ``''``.
+
+    Used on the individual elements that carry ENGLISH text inside a translated
+    document (a rule title, a fix hint, a message with no official translation).
+    An element-level ``lang`` is the HTML-native way to keep the document's own
+    ``<html lang=…>`` declaration honest: assistive technology and browser
+    translation both key on it, so tagging the English islands is what stops
+    ``lang="de"`` from being a claim about text that is not German. Returns the
+    empty string for an English document, so the default bytes never move.
+    """
+    return "" if doc_lang == "en" else ' lang="en"'
+
+
 def _h(value):
     """HTML-escape ANY report/invoice/catalog-derived text for safe markup.
 
@@ -2363,7 +2562,7 @@ def _h(value):
     return html.escape(str(value), quote=True)
 
 
-def build_html(report):
+def build_html(report, lang="en"):
     """Project a report dict (from :func:`build_report`) into ONE self-contained
     static HTML document (returned as a ``str``, a full ``<!doctype html>`` …
     ``</html>``).
@@ -2434,11 +2633,48 @@ def build_html(report):
         error row with the error code + parser message — mirroring the JSON /
         JUnit / SARIF not-well-formed contract.
 
+    LANGUAGE (T-VHRPTH.4). ``lang`` is KEYWORD-DEFAULTED to ``"en"``, so the
+    historical one-argument call — ``build_html(report)``, which is what the
+    in-browser validator page runs (``www/validate/index.html``, an English
+    page) — is unchanged and still returns the exact English bytes it always
+    did. ``lang="de"`` renders the German document the German mandate's users
+    actually need, and it changes THREE things and nothing else:
+
+      * the ``<html lang=…>`` attribute, which now states the language really
+        rendered instead of hard-coding ``en`` (a false declaration for a
+        translated document, and the reason this was worth fixing);
+      * the document CHROME — title, ``<h1>``, meta/summary labels, definition
+        list headings, note and footer — from :data:`_HTML_CHROME`, prose this
+        project authors, with a visible ``[en]`` marker on anything a language
+        row lacks;
+      * each finding's MESSAGE, through ``resolve_message`` — the very same
+        resolver ``einvoice validate --lang de`` uses for its text summary, so
+        the two human surfaces show the identical German sentence for a rule
+        and there is no second translation table to drift.
+
+    NOTHING IS TRANSLATED AT RUN TIME and no wording is invented for a rule.
+    Only ~50 of the fireable rules carry an official German ``message_de`` (the
+    BR-DE family's vendored KoSIT ``<sch:assert>`` text); a rule without one
+    keeps its ENGLISH message, that paragraph is marked ``lang="en"`` and
+    prefixed with a visible ``[en]``, and one note under the findings says so
+    and adds the honest limit that rule TITLES and FIX HINTS come from the
+    English remediation catalog and stay English. Rule ids, severities, counts,
+    positions and the exit code are language-independent facts and are
+    byte-identical in every language.
+
     :param report: a dict as returned by :func:`build_report`.
+    :param lang: ``"en"`` (default) or ``"de"``; any other value renders the
+        English document and declares ``lang="en"``, since declaring a language
+        whose text we do not have is exactly the lie this parameter fixes.
     :returns: a self-contained HTML document as a ``str``.
     """
     profile = report.get("profile", "")
     source = report.get("source", "")
+    # The DECLARED language is the language actually rendered: a value we have
+    # no chrome row for renders English and says "en". `_chrome` would mark
+    # every string `[en]` for such a value anyway; normalising here means the
+    # attribute, the chrome and the message resolver all agree on one value.
+    doc_lang = lang if lang in _HTML_CHROME else "en"
 
     # The set of rule ids for which an authoritative reference page exists —
     # the SAME gate, read through the SAME defensive accessor, the SARIF
@@ -2448,34 +2684,36 @@ def build_html(report):
 
     parts = []
     parts.append("<!doctype html>")
-    parts.append('<html lang="en">')
+    parts.append('<html lang="%s">' % _h(doc_lang))
     parts.append("<head>")
     parts.append('<meta charset="utf-8">')
     parts.append('<meta name="viewport" content="width=device-width, '
                  'initial-scale=1">')
     parts.append('<meta name="robots" content="noindex">')
-    parts.append("<title>einvoice conformance report</title>")
+    parts.append("<title>%s</title>" % _h(_chrome("doc_title", doc_lang)))
     parts.append("<style>%s</style>" % _HTML_STYLE)
     parts.append("</head>")
     parts.append("<body>")
     parts.append("<main>")
-    parts.append("<h1>EN 16931 / XRechnung conformance report</h1>")
+    parts.append("<h1>%s</h1>" % _h(_chrome("h1", doc_lang)))
     # PATH-INVARIANCE (RPT.8): the HTML artifact is archived/shared from CI,
     # so it must never embed the caller's filesystem layout — only the input
     # file's BASENAME is shown (the json ``source`` field keeps the verbatim
     # argv string; sarif embeds no path at all — see REPORT-FORMATS.md "Path
     # echo"). Relative and absolute invocations of the same file therefore
     # produce byte-identical HTML.
-    parts.append('<p class="meta">source: %s &middot; profile: %s</p>'
-                 % (_h(os.path.basename(source)) or "(stdin)", _h(profile)))
+    parts.append('<p class="meta">%s</p>'
+                 % (_chrome("meta", doc_lang)
+                    % (_h(os.path.basename(source))
+                       or _h(_chrome("stdin", doc_lang)), _h(profile))))
 
     if report.get("error"):
         # Not-well-formed XML: a single error row — the HTML analogue of the
         # JUnit single-<error> testcase / SARIF single error result.
         code = report["error"]
         msg = report.get("message", "") or code
-        parts.append('<div class="banner fail">Not well-formed XML — the '
-                     "invoice could not be parsed.</div>")
+        parts.append('<div class="banner fail">%s</div>'
+                     % _h(_chrome("parse_error_banner", doc_lang)))
         parts.append('<div class="error-row">')
         parts.append('<span class="code">%s</span>' % _h(code))
         parts.append("<p>%s</p>" % _h(msg))
@@ -2488,11 +2726,17 @@ def build_html(report):
 
         if valid:
             n = violation_count
-            note = ("no findings" if n == 0
-                    else "%d non-fatal finding%s (warnings do not invalidate)"
-                    % (n, "" if n == 1 else "s"))
-            parts.append('<div class="banner pass">Conformant'
-                         '<span class="counts">%s</span></div>' % _h(note))
+            # Singular and plural are SEPARATE chrome rows rather than an
+            # English "%s"-pluralising suffix: German inflects the adjective
+            # too ("1 nicht fataler Befund" / "2 nicht fatale Befunde"), which
+            # a bolted-on "s" cannot express. The English rows reproduce the
+            # historic strings exactly.
+            note = (_chrome("no_findings", doc_lang) if n == 0
+                    else _chrome("pass_nonfatal_sg" if n == 1
+                                 else "pass_nonfatal_pl", doc_lang) % n)
+            parts.append('<div class="banner pass">%s'
+                         '<span class="counts">%s</span></div>'
+                         % (_h(_chrome("banner_pass", doc_lang)), _h(note)))
         else:
             # The named buckets MUST sum to the stated total. `warning_count`
             # counts ONLY severity == 'warning', so a finding carried at any
@@ -2506,17 +2750,49 @@ def build_html(report):
             # "%d finding(s) total: %d fatal, %d non-fatal") rather than
             # inventing a third phrasing for the same three buckets.
             non_fatal_count = max(0, violation_count - fatal_count)
-            counts = ("%d finding%s &middot; %d fatal &middot; %d non-fatal"
-                      % (violation_count, "" if violation_count == 1 else "s",
-                         fatal_count, non_fatal_count))
-            parts.append('<div class="banner fail">Not conformant'
-                         '<span class="counts">%s</span></div>' % counts)
+            counts = (_chrome("counts_sg" if violation_count == 1
+                              else "counts_pl", doc_lang)
+                      % (violation_count, fatal_count, non_fatal_count))
+            parts.append('<div class="banner fail">%s'
+                         '<span class="counts">%s</span></div>'
+                         % (_h(_chrome("banner_fail", doc_lang)), counts))
+
+        # Did ANY finding in this document fall back to its English message?
+        # Only used to decide whether the fallback note is worth printing; the
+        # per-finding marker below is what actually labels each one.
+        saw_message_fallback = False
 
         for v in violations:
             rule = v.get("rule") or ""
             severity = v.get("severity") or "fatal"
             title = v.get("title")
-            message = v.get("message") or ""
+            english_message = v.get("message") or ""
+            # LOCALISED FINDING TEXT, VIA THE ONE RESOLVER. `resolve_message`
+            # is literally the call `einvoice validate --lang de` makes for its
+            # text summary (cli.py's headline / "also violated" / advisory
+            # lines): it returns the OFFICIAL KoSIT German assert from the
+            # committed catalog where the rule has one and the English argument
+            # otherwise. Using it here — rather than a second table — is what
+            # makes the forwarded HTML and the terminal show the same German
+            # sentence for the same rule. The already-loaded `catalog_ids`
+            # mapping is passed so a report with many findings parses the
+            # catalog JSON once; a catalog-less install yields {}, every
+            # message stays English, and nothing raises — the same
+            # degrade-not-fail discipline the rule links use.
+            message = resolve_message(rule, english_message, doc_lang,
+                                      catalog=catalog_ids)
+            # WAS that an official translation, or the English original? Asked
+            # of the catalog directly instead of inferred by comparing the two
+            # strings, so a rule can never be mislabelled by coincidence. A
+            # finding with no official text in this language keeps its English
+            # message and SAYS SO — silence here is exactly how a reader comes
+            # to believe they are holding the German legal wording.
+            message_fallback = bool(
+                doc_lang != "en" and english_message
+                and _remediation.official_message(
+                    rule, doc_lang, catalog=catalog_ids) is None)
+            if message_fallback:
+                saw_message_fallback = True
             fix_hint = v.get("fix_hint")
             terms = v.get("terms") or []
             field = v.get("field")
@@ -2572,7 +2848,15 @@ def build_html(report):
                     '<span class="sev %s">%s</span>'
                     % (_h(sev_class), _h(severity))]
             if title:
-                head.append('<span class="title">%s</span>' % _h(title))
+                # The remediation catalog's titles are English prose. In a
+                # translated document they are tagged `lang="en"` so the
+                # document's own declaration stays true element by element (a
+                # screen reader keeps its English voice on them instead of
+                # reading English words with German phonemes); `fallback_note`
+                # states the same limit in words. In an English document this
+                # adds nothing, so the default bytes are unchanged.
+                head.append('<span class="title"%s>%s</span>'
+                            % (_en_attr(doc_lang), _h(title)))
             parts.append("<h2>%s</h2>" % "".join(head))
             # The position rides on the message line, exactly where the text
             # report puts it, and the helper's return is emitted VERBATIM
@@ -2587,26 +2871,42 @@ def build_html(report):
             # must never reach the markup raw.
             if message or position:
                 body = _h(message)
+                if message_fallback:
+                    # VISIBLE, in the reading order, not a tooltip: the marker
+                    # leads the sentence so a reader scanning a German document
+                    # sees which findings are not in German before reading them.
+                    body = "%s %s" % (_h(_chrome("fallback_marker", doc_lang)),
+                                      body)
                 if position:
                     body += '<span class="pos">%s</span>' % _h(position)
-                parts.append('<p class="msg">%s</p>' % body)
+                parts.append('<p class="msg"%s>%s</p>'
+                             % (_en_attr(doc_lang) if message_fallback else "",
+                                body))
 
             rows = []
             if fix_hint:
-                rows.append(("How to fix", _h(fix_hint), False))
+                # Same tagging as the title, and for the same reason: fix hints
+                # are English catalog prose in every language.
+                rows.append((_chrome("label_fix", doc_lang), _h(fix_hint),
+                             False, _en_attr(doc_lang)))
             if terms:
-                rows.append(("Business terms",
-                             _h(", ".join(str(t) for t in terms)), True))
+                # BT/BG codes, XPaths and element names are language-neutral
+                # identifiers, so these three carry no lang tag in any language.
+                rows.append((_chrome("label_terms", doc_lang),
+                             _h(", ".join(str(t) for t in terms)), True, ""))
             if field:
-                rows.append(("Field", _h(field), True))
+                rows.append((_chrome("label_field", doc_lang), _h(field),
+                             True, ""))
             if location:
-                rows.append(("Location", _h(location), True))
+                rows.append((_chrome("label_location", doc_lang),
+                             _h(location), True, ""))
             if rows:
                 parts.append("<dl>")
-                for label, val, mono in rows:
+                for label, val, mono, lang_attr in rows:
                     parts.append("<dt>%s</dt>" % _h(label))
-                    parts.append('<dd%s>%s</dd>'
-                                 % (' class="mono"' if mono else "", val))
+                    parts.append('<dd%s%s>%s</dd>'
+                                 % (' class="mono"' if mono else "",
+                                    lang_attr, val))
                 parts.append("</dl>")
             parts.append("</div>")
 
@@ -2616,15 +2916,24 @@ def build_html(report):
             # (a global option, NOT an `explain` subcommand) and needs no
             # network. The angle brackets are escaped so the placeholder can
             # never be read as markup.
-            parts.append(
-                '<p class="note">Rule ids with a published reference page '
-                'link to it; ids without one are shown plain. Offline, '
-                '<code>einvoice --explain &lt;RULE-ID&gt;</code> prints the '
-                'same rule text from your local install.</p>')
+            parts.append('<p class="note">%s</p>'
+                         % _chrome("note", doc_lang))
+            if doc_lang != "en":
+                # THE PROVENANCE PARAGRAPH — the honest limits of this
+                # translation, in the document itself rather than only in our
+                # docs. `provenance_note` is emitted for EVERY translated
+                # document because both of its facts always hold (the German
+                # sentences are quoted KoSIT text, not our translation; titles
+                # and fix hints are English catalog prose in any language).
+                # The `[en]` sentence is appended only when a marker is really
+                # on the page, so the note never explains something absent.
+                note = _chrome("provenance_note", doc_lang)
+                if saw_message_fallback:
+                    note = "%s %s" % (note,
+                                      _chrome("fallback_note", doc_lang))
+                parts.append('<p class="note">%s</p>' % note)
 
-    parts.append("<footer>Static conformance artifact — reflects this one "
-                 "report run against the invoice above. Generated offline by "
-                 "einvoice; no network, no tracking.</footer>")
+    parts.append("<footer>%s</footer>" % _h(_chrome("footer", doc_lang)))
     parts.append("</main>")
     parts.append("</body>")
     parts.append("</html>")
@@ -2654,8 +2963,13 @@ USAGE = ("usage: python3 -m einvoice.report "
          "invoice file and is not combinable with --format/--baseline. "
          "--lang en|de selects the language of that block (de shows the "
          "catalog's German fields and names their provenance; anything with no "
-         "German string stays English). --lang applies to --explain only — the "
-         "report documents themselves are machine-facing and language-neutral.")
+         "German string stays English). On THIS entry point --lang applies to "
+         "--explain only: every other mode here writes a document and refuses "
+         "the flag rather than swallow it. The human report surfaces DO honour "
+         "a language — 'einvoice validate --lang de --format html|text' renders "
+         "German — while the seven machine formats (json, junit, sarif, "
+         "gitlab, github, azure, badge) are language-neutral by design and are "
+         "byte-identical in every language.")
 
 
 #: One line per ``de_source`` value, printed as the ``german`` field of an
@@ -2775,7 +3089,7 @@ def format_explain(rule_id, catalog=None, lang="en"):
     return "\n".join(lines) + "\n"
 
 
-def render_report(report, fmt, pretty=False):
+def render_report(report, fmt, pretty=False, lang="en"):
     """Render a SINGLE-FILE report dict as the exact text ``--format <fmt>``
     emits, and return it as a string (nothing is written or validated here).
 
@@ -2790,7 +3104,21 @@ def render_report(report, fmt, pretty=False):
     report a usage error for anything else); ``pretty`` only affects the default
     ``json`` form, exactly as the ``--pretty`` flag always has (indent=2 +
     sorted keys instead of the compact separators).
+
+    ``lang`` (keyword-defaulted to ``"en"``, so every existing call site is
+    unchanged) reaches only the two HUMAN formats in
+    :data:`LOCALISED_FORMATS` — ``html`` and ``text``. Every format named in
+    :data:`LANGUAGE_NEUTRAL_FORMATS` is rendered as if ``lang="en"`` no matter
+    what was asked for, which is enforced HERE, once, by consulting that
+    tuple — not restated per emitter, and not left to each emitter's discretion
+    (that is how a new machine format would drift into localising its message
+    and silently re-keying every consumer's fingerprints and diffs). The
+    partition is total over :data:`REPORT_FORMATS` by construction, so a newly
+    registered emitter is either declared machine-facing there or lands in
+    ``LOCALISED_FORMATS`` and must take the ``lang`` this function passes it.
     """
+    if fmt in LANGUAGE_NEUTRAL_FORMATS:
+        lang = "en"
     if fmt == "junit":
         return build_junit(report)
     if fmt == "sarif":
@@ -2802,11 +3130,11 @@ def render_report(report, fmt, pretty=False):
     if fmt == "azure":
         return build_azure(report)
     if fmt == "html":
-        return build_html(report)
+        return build_html(report, lang=lang)
     if fmt == "badge":
         return json.dumps(build_badge(report), indent=2, sort_keys=True) + "\n"
     if fmt == "text":
-        return build_text(report)
+        return build_text(report, lang=lang)
     if pretty:
         return json.dumps(report, indent=2, sort_keys=True) + "\n"
     return json.dumps(report, separators=(",", ":")) + "\n"
@@ -2885,9 +3213,13 @@ def main(argv=None):
             continue
         # --lang is accepted HERE, in the shared parser, purely so ``--explain``
         # can be read in German (T-VHERG.6). It is rejected below for every
-        # other mode rather than silently ignored: a report document is
-        # machine-facing and language-neutral, and a flag that is swallowed
+        # other mode of THIS entry point rather than silently ignored, and the
+        # refusal names the surface that does honour it: a flag swallowed
         # without effect is how a user comes to believe a translation happened.
+        # (The console script's ``validate --lang de --format html|text`` DOES
+        # render German — see :data:`LOCALISED_FORMATS`. This entry point keeps
+        # its refusal because its published contract is the machine document;
+        # that divergence is row "lang" of cli.ENTRY_POINT_CAPABILITIES.)
         if a == "--lang":
             if i + 1 >= len(args):
                 sys.stderr.write("error: --lang needs a value\n" + USAGE + "\n")

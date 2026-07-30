@@ -93,6 +93,43 @@ parsing `einvoice validate --json`, nothing you rely on has changed.
   `report.py` list the same set. Add or drop a format without editing both and
   the gate goes red.
 
+## Language (`--lang de`)
+
+Two of the nine surfaces are human documents and honour the language flag; the
+other seven are machine documents and are pinned language-neutral **by design**
+(`einvoice.report.LANGUAGE_NEUTRAL_FORMATS` / `LOCALISED_FORMATS`, partitioned
+over the same nine-name registry so a new emitter cannot stay unclassified).
+
+| Surface | Under `einvoice validate --lang de` |
+| --- | --- |
+| `html` | A **German document**: German `<title>`, `<h1>`, banner and labels (`Datei:`/`Profil:`, `Behebung`, `Geschäftsbegriffe (BT/BG)`, `Feld`, `Stelle im XML`), and `<html lang="de">` — the declaration states what is actually rendered. Each finding's sentence is the official KoSIT German where the rule carries one. |
+| `text` | The per-finding **message** is swapped; the grep-stable `PASS`/`FAIL`/`ERROR` token, rule ids, severities, fields and positions are untouched. |
+| `json`, `junit`, `sarif`, `gitlab`, `github`, `azure`, `badge` | **Byte-identical** with and without the flag (pinned by `test_lang.py`). |
+
+Why the seven do not localise: their consumers key on the stable rule id — the
+SARIF and GitLab **fingerprints** hash the rule id plus the location and
+deliberately leave the human sentence out, because the sentence is not part of a
+finding's identity. The `json` document is the one that gets **diffed**:
+`--baseline` keys a violation on `rule, field, message, severity`, which *does*
+include the message. Translating it would therefore not translate a report — it
+would re-key every stored finding, so the first run after a pipeline changed its
+locale would score the whole file as resolved-plus-new and fail the build.
+
+Honest limit on the German HTML report: only **50 of 297** rules have official
+German text to quote (the KoSIT-authored `BR-DE-*` family — see
+[EXIT-CODES.md](EXIT-CODES.md#what---langde-actually-gives-you-measured-german-coverage)).
+A finding without one keeps its **English** sentence, prefixed with a visible
+`[en]` and tagged `lang="en"` on its own paragraph, and the document carries one
+note explaining the marker and stating that rule titles and fix hints come from
+our English catalog and stay English in every language. Nothing is machine- or
+hand-translated: the German rule sentences are the vendored KoSIT asserts
+verbatim, and only the document chrome above is prose this project authors.
+
+`python3 -m einvoice.report` **refuses** `--lang` outside `--explain` (exit 1
+with a reasoned message) rather than swallowing it: that entry point's published
+contract is the machine document. Use `einvoice validate --lang de --format
+html` for the German report.
+
 ## Path echo
 
 Measured rule (pinned by `test_path_invariance.py`): **reports echo the input

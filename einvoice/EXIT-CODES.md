@@ -220,9 +220,22 @@ Scope and invariants:
   syntax-binding findings stay non-blocking here exactly as they are in the
   text/JSON forms. Pass `--profile` explicitly whenever you compare the two
   surfaces.
-- `--fail-on` applies unchanged; `--quiet` and `--lang` are no-ops for a machine
-  format (the document *is* the output, and `--lang` only ever selected the human
-  summary string) — identical to how both behave with `--json` today.
+- `--fail-on` applies unchanged. `--quiet` is a no-op for every `--format` (the
+  document *is* the output, so there is no summary to silence) — identical to how
+  it behaves with `--json` today. `--lang` applies to the two **human** formats
+  in `einvoice.report.LOCALISED_FORMATS`: `--lang de --format html` renders a
+  German document (`<html lang="de">`, German chrome, and the official KoSIT
+  German rule sentence for the rules that carry one), and `--format text` swaps
+  the message on each finding line. The seven formats in
+  `einvoice.report.LANGUAGE_NEUTRAL_FORMATS` — `json`, `junit`, `sarif`,
+  `gitlab`, `github`, `azure`, `badge` — are **byte-identical** with and without
+  `--lang de` (pinned by `test_lang.py`): they are machine documents whose
+  consumers key on the rule id (the SARIF and GitLab fingerprints hash the rule
+  id and the location and deliberately leave the sentence out), and the `json`
+  document is the one `--baseline` **diffs**, on a key that *does* include the
+  message (`rule, field, message, severity`) — so localising it would not
+  translate a report, it would re-key every stored finding and score the whole
+  file as resolved-plus-new the first time a pipeline changed its locale.
 - `validate-batch` accepts the **aggregate-capable** subset — `json`, `junit`,
   `text` (`einvoice.report.BATCH_FORMATS`). The other six describe ONE invoice
   (one SARIF run, one Code-Quality array, one HTML page, one badge), so asking
@@ -362,6 +375,21 @@ for the other 247 rather than being invented; and a `german` line names which of
 the two provenances you are looking at. Any field with no German string falls
 back to its English text — nothing is machine-translated and no German rule text
 is authored to fill a gap.
+
+The same 50/297 split is what you see in the **HTML report** under
+`validate --lang de --format html`, which is the document a German company
+forwards to its accountant. The document chrome (title, heading, banner, the
+`Datei:`/`Profil:` line, the `Behebung` / `Geschäftsbegriffe (BT/BG)` / `Feld` /
+`Stelle im XML` labels) is German prose this project authors, and `<html
+lang="de">` declares what is actually rendered. Each finding's sentence is the
+official KoSIT text for one of the 50; for the other 247 the **English** sentence
+survives, is prefixed with a visible `[en]`, is tagged `lang="en"` on its own
+paragraph, and the document itself says so in one note — which also states the
+honest limit that rule **titles and fix hints come from the English catalog and
+stay English** in every language, because those are our wording rather than the
+standard's. `--format text` swaps the same message on each finding line and
+leaves the grep-stable `PASS`/`FAIL`/`ERROR` token, rule ids, severities and
+positions alone.
 
 These counts are not prose kept by hand: `test_lang.py` re-reads this table and
 the catalog and fails if they disagree, so a catalog change that is not
